@@ -47,7 +47,7 @@ type Tokenizer struct {
 
 type Number interface {
 	IsNumberFirst(r rune) bool
-	isNumber(r rune) bool
+	IsNumber(r rune) bool
 }
 
 func NewTokenizer(text string, number Number) *Tokenizer {
@@ -104,7 +104,7 @@ func (t *Tokenizer) run(tokens chan<- Token) {
 			t.unread()
 			switch c := t.peek(); {
 			case t.number.IsNumberFirst(c):
-				image := t.read(t.number.isNumber)
+				image := t.read(t.number.IsNumber)
 				tokens <- Token{tNumber, image}
 			case unicode.IsLetter(c):
 				image := t.read(func(c rune) bool { return unicode.IsLetter(c) || unicode.IsNumber(c) })

@@ -19,7 +19,7 @@ func (s simpleNumber) IsNumberFirst(r rune) bool {
 	return unicode.IsNumber(r)
 }
 
-func (s simpleNumber) isNumber(r rune) bool {
+func (s simpleNumber) IsNumber(r rune) bool {
 	return s.IsNumberFirst(r) || r == '.'
 }
 
@@ -71,6 +71,11 @@ func (p *Parser[V]) Func(name string, f func(a ...V) V, min, max int) *Parser[V]
 		maxArgs:  max,
 		function: f,
 	}
+	return p
+}
+
+func (p *Parser[V]) Number(num Number) *Parser[V] {
+	p.number = num
 	return p
 }
 

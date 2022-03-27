@@ -1,0 +1,105 @@
+package parser
+
+import (
+	"github.com/stretchr/testify/assert"
+	"math"
+	"strconv"
+	"testing"
+)
+
+func Test_Calculate(t *testing.T) {
+	p := New[float64]().
+		Op("+", func(a, b float64) float64 { return a + b }).
+		Op("-", func(a, b float64) float64 { return a - b }).
+		Op("*", func(a, b float64) float64 { return a * b }).
+		Op("/", func(a, b float64) float64 { return a / b }).
+		Op("^", func(a, b float64) float64 { return math.Pow(a, b) }).
+		Unary("-", func(a float64) float64 { return -a }).
+		ValFromNum(func(s string) (float64, error) { return strconv.ParseFloat(s, 64) })
+
+	assert.EqualValues(t, 5, eval(t, must(t, p, "2+3")))
+	assert.EqualValues(t, 4, eval(t, must(t, p, "2*2")))
+	assert.EqualValues(t, 8, eval(t, must(t, p, "2+3*2")))
+	assert.EqualValues(t, 7, eval(t, must(t, p, "2*2+3")))
+	assert.EqualValues(t, 4, eval(t, must(t, p, "10/5*2")))
+	assert.EqualValues(t, -2, eval(t, must(t, p, "-2")))
+	assert.EqualValues(t, -2, eval(t, must(t, p, "-(1+1)")))
+
+	assert.EqualValues(t, 6, eval(t, must(t, p, "2*(1+2)")))
+	assert.EqualValues(t, 6, eval(t, must(t, p, "(1+2)*2")))
+
+	assert.EqualValues(t, 9, eval(t, must(t, p, "1+2^3")))
+	assert.EqualValues(t, 2, eval(t, must(t, p, "4^0.5")))
+}
+
+func eval(t *testing.T, f Function[float64]) float64 {
+	v, err := f(nil)
+	assert.NoError(t, err)
+	return v
+}
+
+func evalVar(t *testing.T, f Function[float64], vars map[string]float64) float64 {
+	v, err := f(func(name string) (float64, bool) {
+		v, ok := vars[name]
+		return v, ok
+	})
+	assert.NoError(t, err)
+	return v
+}
+
+func must(t *testing.T, p *Parser[float64], s string) Function[float64] {
+	f, err := p.Parse(s)
+	assert.NoError(t, err)
+	return f
+}
+
+func Test_Bool(t *testing.T) {
+	p := New[float64]().
+		Op("&", func(a, b float64) float64 {
+			if (a != 0) && (b != 0) {
+				return 1
+			} else {
+				return 0
+			}
+		}).
+		Op("|", func(a, b float64) float64 {
+			if (a != 0) || (b != 0) {
+				return 1
+			} else {
+				return 0
+			}
+		}).
+		Op("=", func(a, b float64) float64 {
+			if a == b {
+				return 1
+			} else {
+				return 0
+			}
+		}).
+		ValFromNum(func(s string) (float64, error) { return strconv.ParseFloat(s, 64) })
+
+	assert.EqualValues(t, 1, eval(t, must(t, p, "5=5")))
+	assert.EqualValues(t, 0, eval(t, must(t, p, "5=4")))
+
+	assert.EqualValues(t, 1, eval(t, must(t, p, "1=1 & 2=2")))
+	assert.EqualValues(t, 0, eval(t, must(t, p, "1=1 & 2=3")))
+}
+
+func Test_Var(t *testing.T) {
+	p := New[float64]().
+		Op("+", func(a, b float64) float64 { return a + b }).
+		ValFromNum(func(s string) (float64, error) { return strconv.ParseFloat(s, 64) })
+
+	assert.EqualValues(t, 9, evalVar(t, must(t, p, "a+b"), map[string]float64{"a": 5, "b": 4}))
+}
+
+func Test_Func(t *testing.T) {
+	p := New[float64]().
+		Func("f", func(a ...float64) float64 {
+			return a[0] + a[1]
+		}, 2, 2).
+		Op("+", func(a, b float64) float64 { return a + b }).
+		ValFromNum(func(s string) (float64, error) { return strconv.ParseFloat(s, 64) })
+
+	assert.EqualValues(t, 6, eval(t, must(t, p, "f(2,3)+1")))
+}

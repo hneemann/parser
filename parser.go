@@ -15,12 +15,23 @@ type operator[V any] struct {
 type simpleNumber struct {
 }
 
-func (s simpleNumber) IsNumberFirst(r rune) bool {
+func (s simpleNumber) MatchesFirst(r rune) bool {
 	return unicode.IsNumber(r)
 }
 
-func (s simpleNumber) IsNumber(r rune) bool {
-	return s.IsNumberFirst(r) || r == '.'
+func (s simpleNumber) Matches(r rune) bool {
+	return s.MatchesFirst(r) || r == '.'
+}
+
+type simpleIdentifier struct {
+}
+
+func (s simpleIdentifier) MatchesFirst(r rune) bool {
+	return unicode.IsLetter(r)
+}
+
+func (s simpleIdentifier) Matches(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsNumber(r)
 }
 
 type function[V any] struct {
@@ -35,7 +46,8 @@ type Parser[V any] struct {
 	functions  map[string]function[V]
 	numToValue func(s string) (V, error)
 	strToValue func(s string) (V, error)
-	number     Number
+	number     Matcher
+	identifier Matcher
 }
 
 type Variables[V any] interface {
@@ -55,9 +67,10 @@ type Function[V any] func(context Variables[V]) (V, error)
 
 func New[V any]() *Parser[V] {
 	return &Parser[V]{
-		unary:     map[string]func(V) V{},
-		functions: map[string]function[V]{},
-		number:    simpleNumber{},
+		unary:      map[string]func(V) V{},
+		functions:  map[string]function[V]{},
+		number:     simpleNumber{},
+		identifier: simpleIdentifier{},
 	}
 }
 
@@ -83,8 +96,13 @@ func (p *Parser[V]) Func(name string, f func(a ...V) V, min, max int) *Parser[V]
 	return p
 }
 
-func (p *Parser[V]) Number(num Number) *Parser[V] {
+func (p *Parser[V]) Number(num Matcher) *Parser[V] {
 	p.number = num
+	return p
+}
+
+func (p *Parser[V]) Identifier(ident Matcher) *Parser[V] {
+	p.identifier = ident
 	return p
 }
 
@@ -110,7 +128,7 @@ func (p *Parser[V]) Parse(str string) (f Function[V], err error) {
 			f = nil
 		}
 	}()
-	tokenizer := NewTokenizer(str, p.number)
+	tokenizer := NewTokenizer(str, p.number, p.identifier)
 	e := p.parse(tokenizer, 0)
 	t := tokenizer.Next()
 	if t.typ != tEof {

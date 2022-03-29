@@ -74,12 +74,12 @@ func sqr(x float64) float64 {
 type errNumber struct {
 }
 
-func (s errNumber) IsNumberFirst(r rune) bool {
+func (s errNumber) MatchesFirst(r rune) bool {
 	return unicode.IsNumber(r)
 }
 
-func (s errNumber) IsNumber(r rune) bool {
-	return s.IsNumberFirst(r) || r == '.' || r == 'e'
+func (s errNumber) Matches(r rune) bool {
+	return s.MatchesFirst(r) || r == '.' || r == 'e'
 }
 
 func parseStr(str string) (ValErr, error) {

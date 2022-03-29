@@ -36,23 +36,24 @@ func (t Token) String() string {
 }
 
 type Tokenizer struct {
-	str     string
-	isLast  bool
-	last    rune
-	tok     chan Token
-	isToken bool
-	token   Token
-	number  Number
+	str        string
+	isLast     bool
+	last       rune
+	tok        chan Token
+	isToken    bool
+	token      Token
+	number     Matcher
+	identifier Matcher
 }
 
-type Number interface {
-	IsNumberFirst(r rune) bool
-	IsNumber(r rune) bool
+type Matcher interface {
+	MatchesFirst(r rune) bool
+	Matches(r rune) bool
 }
 
-func NewTokenizer(text string, number Number) *Tokenizer {
+func NewTokenizer(text string, number, identifier Matcher) *Tokenizer {
 	t := make(chan Token)
-	tok := &Tokenizer{str: text, number: number, tok: t}
+	tok := &Tokenizer{str: text, number: number, identifier: identifier, tok: t}
 	go tok.run(t)
 	return tok
 }
@@ -103,8 +104,8 @@ func (t *Tokenizer) run(tokens chan<- Token) {
 		default:
 			t.unread()
 			switch c := t.peek(); {
-			case t.number.IsNumberFirst(c):
-				image := t.read(t.number.IsNumber)
+			case t.number.MatchesFirst(c):
+				image := t.read(t.number.Matches)
 				tokens <- Token{tNumber, image}
 			case unicode.IsLetter(c):
 				image := t.read(func(c rune) bool { return unicode.IsLetter(c) || unicode.IsNumber(c) })

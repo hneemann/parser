@@ -107,8 +107,8 @@ func (t *Tokenizer) run(tokens chan<- Token) {
 			case t.number.MatchesFirst(c):
 				image := t.read(t.number.Matches)
 				tokens <- Token{tNumber, image}
-			case unicode.IsLetter(c):
-				image := t.read(func(c rune) bool { return unicode.IsLetter(c) || unicode.IsNumber(c) })
+			case t.identifier.MatchesFirst(c):
+				image := t.read(t.identifier.Matches)
 				tokens <- Token{tIdent, image}
 			default:
 				image := t.read(func(c rune) bool {

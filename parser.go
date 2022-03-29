@@ -38,7 +38,16 @@ type Parser[V any] struct {
 	number     Number
 }
 
-type Variables[V any] func(name string) (V, bool)
+type Variables[V any] interface {
+	Get(name string) (V, bool)
+}
+
+type VarMap[V any] map[string]V
+
+func (m VarMap[V]) Get(name string) (V, bool) {
+	v, ok := m[name]
+	return v, ok
+}
 
 type expression[V any] func(context Variables[V]) V
 
@@ -160,7 +169,7 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) expression[V] {
 		name := t.image
 		if tokenizer.Peek().typ != tOpen {
 			return func(context Variables[V]) V {
-				if v, ok := context(name); ok {
+				if v, ok := context.Get(name); ok {
 					return v
 				} else {
 					panic("variable '" + name + "' not found!")

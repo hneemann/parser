@@ -30,7 +30,7 @@ func (v vFloat) Float() float64 {
 type vString string
 
 func (v vString) Bool() bool {
-	return false
+	return v == "true"
 }
 
 func (v vString) String() string {
@@ -38,7 +38,11 @@ func (v vString) String() string {
 }
 
 func (v vString) Float() float64 {
-	return 0
+	fl, err := strconv.ParseFloat(string(v), 64)
+	if err != nil {
+		return 0
+	}
+	return fl
 }
 
 type vBool bool
@@ -111,7 +115,7 @@ func vSub(a, b Value) Value {
 func vMul(a, b Value) Value {
 	if a, ok := a.(vFloat); ok {
 		if b, ok := b.(vFloat); ok {
-			return a + b
+			return a * b
 		}
 	}
 	panic(notPossible(a, "*", b))

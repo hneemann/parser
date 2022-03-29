@@ -29,11 +29,8 @@ func eval(t *testing.T, f Function[float64]) float64 {
 	return v
 }
 
-func evalVar(t *testing.T, f Function[float64], vars map[string]float64) float64 {
-	v, err := f(func(name string) (float64, bool) {
-		v, ok := vars[name]
-		return v, ok
-	})
+func evalVar(t *testing.T, f Function[float64], vars VarMap[float64]) float64 {
+	v, err := f(vars)
 	assert.NoError(t, err)
 	return v
 }

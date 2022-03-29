@@ -67,3 +67,13 @@ func Test_Func(t *testing.T) {
 
 	assert.EqualValues(t, 6, eval(t, must(t, p, "f(2,3)+1")))
 }
+
+func Test_Invalid(t *testing.T) {
+	p := NewFloat()
+
+	_, err := p.Parse("\"5+#5\"")
+	assert.Error(t, err)
+	_, err = p.Parse("\"5#5\"")
+	assert.Error(t, err)
+
+}

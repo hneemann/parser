@@ -3,7 +3,6 @@ package parser
 import (
 	"fmt"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -18,6 +17,7 @@ const (
 	tString
 	tOperate
 	tEof
+	tInvalid
 )
 
 const (
@@ -44,6 +44,7 @@ type Tokenizer struct {
 	token      Token
 	number     Matcher
 	identifier Matcher
+	operator   Matcher
 }
 
 type Matcher interface {
@@ -51,9 +52,9 @@ type Matcher interface {
 	Matches(r rune) bool
 }
 
-func NewTokenizer(text string, number, identifier Matcher) *Tokenizer {
+func NewTokenizer(text string, number, identifier, operator Matcher) *Tokenizer {
 	t := make(chan Token)
-	tok := &Tokenizer{str: text, number: number, identifier: identifier, tok: t}
+	tok := &Tokenizer{str: text, number: number, identifier: identifier, operator: operator, tok: t}
 	go tok.run(t)
 	return tok
 }
@@ -110,11 +111,11 @@ func (t *Tokenizer) run(tokens chan<- Token) {
 			case t.identifier.MatchesFirst(c):
 				image := t.read(t.identifier.Matches)
 				tokens <- Token{tIdent, image}
-			default:
-				image := t.read(func(c rune) bool {
-					return !(unicode.IsLetter(c) || unicode.IsNumber(c) || c == '(' || c == ' ' || c == '"' || c == '\'' || c == ',')
-				})
+			case t.operator.MatchesFirst(c):
+				image := t.read(t.operator.Matches)
 				tokens <- Token{tOperate, image}
+			default:
+				tokens <- Token{tInvalid, string(t.peek())}
 			}
 		}
 	}

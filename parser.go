@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"unicode"
 )
 
@@ -34,6 +35,17 @@ func (s simpleIdentifier) Matches(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsNumber(r)
 }
 
+type simpleOperator struct {
+}
+
+func (s simpleOperator) MatchesFirst(r rune) bool {
+	return s.Matches(r)
+}
+
+func (s simpleOperator) Matches(r rune) bool {
+	return strings.ContainsRune("+-*/&|!~<=>^", r)
+}
+
 type function[V any] struct {
 	minArgs  int
 	maxArgs  int
@@ -48,6 +60,7 @@ type Parser[V any] struct {
 	strToValue func(s string) (V, error)
 	number     Matcher
 	identifier Matcher
+	operator   Matcher
 }
 
 type Variables[V any] interface {
@@ -71,6 +84,7 @@ func New[V any]() *Parser[V] {
 		functions:  map[string]function[V]{},
 		number:     simpleNumber{},
 		identifier: simpleIdentifier{},
+		operator:   simpleOperator{},
 	}
 }
 
@@ -106,6 +120,11 @@ func (p *Parser[V]) Identifier(ident Matcher) *Parser[V] {
 	return p
 }
 
+func (p *Parser[V]) Operator(operator Matcher) *Parser[V] {
+	p.operator = operator
+	return p
+}
+
 func (p *Parser[V]) ValFromNum(toVal func(val string) (V, error)) *Parser[V] {
 	p.numToValue = toVal
 	return p
@@ -128,7 +147,7 @@ func (p *Parser[V]) Parse(str string) (f Function[V], err error) {
 			f = nil
 		}
 	}()
-	tokenizer := NewTokenizer(str, p.number, p.identifier)
+	tokenizer := NewTokenizer(str, p.number, p.identifier, p.operator)
 	e := p.parse(tokenizer, 0)
 	t := tokenizer.Next()
 	if t.typ != tEof {

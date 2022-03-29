@@ -71,9 +71,11 @@ func Test_Func(t *testing.T) {
 func Test_TextOperator(t *testing.T) {
 	p := NewFloat().TextOperator(map[string]string{
 		"plus": "+",
+		"is":   "=",
 	})
 
 	assert.EqualValues(t, 3, eval(t, must(t, p, "1 plus 2")))
+	assert.EqualValues(t, 1, eval(t, must(t, p, "2 is 2")))
 }
 
 func Test_Invalid(t *testing.T) {

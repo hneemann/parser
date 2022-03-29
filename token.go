@@ -36,15 +36,16 @@ func (t Token) String() string {
 }
 
 type Tokenizer struct {
-	str        string
-	isLast     bool
-	last       rune
-	tok        chan Token
-	isToken    bool
-	token      Token
-	number     Matcher
-	identifier Matcher
-	operator   Matcher
+	str           string
+	isLast        bool
+	last          rune
+	tok           chan Token
+	isToken       bool
+	token         Token
+	number        Matcher
+	identifier    Matcher
+	operator      Matcher
+	textOperators map[string]string
 }
 
 type Matcher interface {
@@ -54,9 +55,20 @@ type Matcher interface {
 
 func NewTokenizer(text string, number, identifier, operator Matcher) *Tokenizer {
 	t := make(chan Token)
-	tok := &Tokenizer{str: text, number: number, identifier: identifier, operator: operator, tok: t}
+	tok := &Tokenizer{
+		str:           text,
+		textOperators: map[string]string{},
+		number:        number,
+		identifier:    identifier,
+		operator:      operator,
+		tok:           t}
 	go tok.run(t)
 	return tok
+}
+
+func (t *Tokenizer) SetTextOperators(textOp map[string]string) *Tokenizer {
+	t.textOperators = textOp
+	return t
 }
 
 func (t *Tokenizer) Peek() Token {
@@ -110,7 +122,11 @@ func (t *Tokenizer) run(tokens chan<- Token) {
 				tokens <- Token{tNumber, image}
 			case t.identifier.MatchesFirst(c):
 				image := t.read(t.identifier.Matches)
-				tokens <- Token{tIdent, image}
+				if t, ok := t.textOperators[image]; ok {
+					tokens <- Token{tOperate, t}
+				} else {
+					tokens <- Token{tIdent, image}
+				}
 			case t.operator.MatchesFirst(c):
 				image := t.read(t.operator.Matches)
 				tokens <- Token{tOperate, image}

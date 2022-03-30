@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/hneemann/parser"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -248,8 +249,23 @@ func parseStr(s string) (Value, error) {
 	return vString(s), nil
 }
 
-func convertList(list []Value) Value {
-	return vList(list)
+type convertList struct {
+}
+
+func (c convertList) Create(v []Value) Value {
+	return vList(v)
+}
+
+func (c convertList) GetElement(i Value, list Value) (Value, error) {
+	if list, ok := list.(vList); ok {
+		i := int(math.Round(i.Float()))
+		if i < 0 || i >= len(list) {
+			return vBool(false), fmt.Errorf("%v index out of bounds %d", list, i)
+		}
+		return list[i], nil
+	} else {
+		return vBool(false), fmt.Errorf("%v is not a list", list)
+	}
 }
 
 func swap(f func(a Value, b Value) Value) func(a Value, b Value) Value {
@@ -265,7 +281,7 @@ func New() *parser.Parser[Value] {
 		Func("string", func(a ...Value) Value { return vString(a[0].String()) }, 1, 1).
 		ValFromNum(parseNum).
 		ValFromStr(parseStr).
-		ValFromList(convertList).
+		ArrayHandler(convertList{}).
 		Unary("-", vNeg).
 		Unary("!", vNot).
 		Op("|", vOr).

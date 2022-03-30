@@ -61,7 +61,7 @@ type Parser[V any] struct {
 	functions     map[string]function[V]
 	numToValue    func(s string) (V, error)
 	strToValue    func(s string) (V, error)
-	listToValue   func(list []V) V
+	arrayHandler  Array[V]
 	textOperators map[string]string
 	number        Matcher
 	identifier    Matcher
@@ -80,6 +80,14 @@ type VarMap[V any] map[string]V
 func (m VarMap[V]) Get(name string) (V, bool) {
 	v, ok := m[name]
 	return v, ok
+}
+
+// Array allows creating and to access arrays
+type Array[V any] interface {
+	// Create creates an array
+	Create([]V) V
+	// GetElement returns a value from an array
+	GetElement(index V, list V) (V, error)
 }
 
 type expression[V any] func(context Variables[V]) V
@@ -163,8 +171,8 @@ func (p *Parser[V]) ValFromStr(toVal func(val string) (V, error)) *Parser[V] {
 }
 
 // ValFromList is used to set a converter that creates values from a list of values
-func (p *Parser[V]) ValFromList(toVal func(list []V) V) *Parser[V] {
-	p.listToValue = toVal
+func (p *Parser[V]) ArrayHandler(h Array[V]) *Parser[V] {
+	p.arrayHandler = h
 	return p
 }
 
@@ -237,6 +245,31 @@ func (p *Parser[V]) nextParserCall(op int) parserFunc[V] {
 }
 
 func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) expression[V] {
+	expression := p.parseLiteral(tokenizer)
+	if tokenizer.Peek().typ == tOpenBracket {
+		if p.arrayHandler == nil {
+			panic("unknown token type: " + tokenizer.Next().image)
+		}
+		tokenizer.Next()
+		indexExpr := p.parse(tokenizer, 0)
+		t := tokenizer.Next()
+		if t.typ != tCloseBracket {
+			panic(unexpected("}", t))
+		}
+		return func(context Variables[V]) V {
+			index := indexExpr(context)
+			list := expression(context)
+			v, err := p.arrayHandler.GetElement(index, list)
+			if err != nil {
+				panic(fmt.Errorf("index error: %w", err))
+			}
+			return v
+		}
+	}
+	return expression
+}
+
+func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) expression[V] {
 	t := tokenizer.Next()
 	switch t.typ {
 	case tIdent:
@@ -271,7 +304,7 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) expression[V] {
 			}
 		}
 	case tOpenBracket:
-		if p.listToValue == nil {
+		if p.arrayHandler == nil {
 			panic("unknown token type: " + t.image)
 		}
 		args := p.parseArgs(tokenizer, tCloseBracket)
@@ -280,7 +313,7 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) expression[V] {
 			for i, e := range args {
 				a[i] = e(context)
 			}
-			return p.listToValue(a)
+			return p.arrayHandler.Create(a)
 		}
 	case tOperate:
 		u := p.unary[t.image]

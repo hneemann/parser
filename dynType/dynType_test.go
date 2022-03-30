@@ -39,6 +39,7 @@ func Test_Simple(t *testing.T) {
 
 		{name: "list 1", exp: "1 ~ [1,2,3]", res: vBool(true)},
 		{name: "list 2", exp: "1 ~ [4,2,3]", res: vBool(false)},
+		{name: "list index", exp: "[4,2,3][1]", res: vFloat(2)},
 	}
 
 	p := New()

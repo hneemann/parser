@@ -1,6 +1,7 @@
 package dynType
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/hneemann/parser"
 	"strconv"
@@ -65,6 +66,30 @@ func (v vBool) Float() float64 {
 	} else {
 		return 0
 	}
+}
+
+type vList []Value
+
+func (v vList) Bool() bool {
+	return false
+}
+
+func (v vList) String() string {
+	var b bytes.Buffer
+	for i, v := range v {
+		if i == 0 {
+			b.WriteString("[")
+		} else {
+			b.WriteString(",")
+		}
+		b.WriteString(v.String())
+	}
+	b.WriteString("]")
+	return b.String()
+}
+
+func (v vList) Float() float64 {
+	return 0
 }
 
 func notPossible(a Value, op string, b Value) string {
@@ -154,6 +179,14 @@ func vLike(a, b Value) Value {
 			return vBool(strings.Contains(strings.ToLower(string(a)), strings.ToLower(string(b))))
 		}
 	}
+	if b, ok := b.(vList); ok {
+		for _, e := range b {
+			if e == a {
+				return vBool(true)
+			}
+		}
+		return vBool(false)
+	}
 	panic(notPossible(a, "~", b))
 }
 
@@ -215,6 +248,10 @@ func parseStr(s string) (Value, error) {
 	return vString(s), nil
 }
 
+func convertList(list []Value) Value {
+	return vList(list)
+}
+
 func swap(f func(a Value, b Value) Value) func(a Value, b Value) Value {
 	return func(a Value, b Value) Value {
 		return f(b, a)
@@ -228,6 +265,7 @@ func New() *parser.Parser[Value] {
 		Func("string", func(a ...Value) Value { return vString(a[0].String()) }, 1, 1).
 		ValFromNum(parseNum).
 		ValFromStr(parseStr).
+		ValFromList(convertList).
 		Unary("-", vNeg).
 		Unary("!", vNot).
 		Op("|", vOr).

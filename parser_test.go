@@ -81,8 +81,8 @@ func Test_TextOperator(t *testing.T) {
 func Test_Invalid(t *testing.T) {
 	p := NewFloat()
 
-	_, err := p.Parse("\"5+#5\"")
+	_, err := p.Parse("5+#5")
 	assert.Error(t, err)
-	_, err = p.Parse("\"5#5\"")
+	_, err = p.Parse("5#5")
 	assert.Error(t, err)
 }

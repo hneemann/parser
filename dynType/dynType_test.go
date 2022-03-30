@@ -36,6 +36,9 @@ func Test_Simple(t *testing.T) {
 		{name: "conv string to bool", exp: "bool(\"true\")", res: vBool(true)},
 		{name: "conv float to bool", exp: "bool(\"false\")", res: vBool(false)},
 		{name: "conv float to bool", exp: "bool(\"bla\")", res: vBool(false)},
+
+		{name: "list 1", exp: "1 ~ [1,2,3]", res: vBool(true)},
+		{name: "list 2", exp: "1 ~ [4,2,3]", res: vBool(false)},
 	}
 
 	p := New()
@@ -46,5 +49,11 @@ func Test_Simple(t *testing.T) {
 		assert.NoError(t, err, test.name)
 		assert.EqualValues(t, test.res, r, test.name)
 	}
+}
 
+func Test_Invalid(t *testing.T) {
+	p := New()
+	f, err := p.Parse("2<3 & \"test\"")
+	_, err = f(nil)
+	assert.Error(t, err)
 }

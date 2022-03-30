@@ -61,6 +61,7 @@ type Parser[V any] struct {
 	functions     map[string]function[V]
 	numToValue    func(s string) (V, error)
 	strToValue    func(s string) (V, error)
+	listToValue   func(list []V) V
 	textOperators map[string]string
 	number        Matcher
 	identifier    Matcher
@@ -161,6 +162,12 @@ func (p *Parser[V]) ValFromStr(toVal func(val string) (V, error)) *Parser[V] {
 	return p
 }
 
+// ValFromList is used to set a converter that creates values from a list of values
+func (p *Parser[V]) ValFromList(toVal func(list []V) V) *Parser[V] {
+	p.listToValue = toVal
+	return p
+}
+
 // Parse parses the given string and returns a Function
 func (p *Parser[V]) Parse(str string) (f Function[V], err error) {
 	defer func() {
@@ -244,7 +251,7 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) expression[V] {
 			}
 		} else {
 			tokenizer.Next()
-			args := p.parseArgs(tokenizer)
+			args := p.parseArgs(tokenizer, tClose)
 			if f, ok := p.functions[name]; ok {
 				if len(args) < f.minArgs {
 					panic("function '" + name + "' requires at least " + strconv.Itoa(f.minArgs) + " arguments")
@@ -262,6 +269,18 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) expression[V] {
 			} else {
 				panic("function '" + name + "' not found")
 			}
+		}
+	case tOpenBracket:
+		if p.listToValue == nil {
+			panic("unknown token type: " + t.image)
+		}
+		args := p.parseArgs(tokenizer, tCloseBracket)
+		return func(context Variables[V]) V {
+			a := make([]V, len(args))
+			for i, e := range args {
+				a[i] = e(context)
+			}
+			return p.listToValue(a)
 		}
 	case tOperate:
 		u := p.unary[t.image]
@@ -306,12 +325,12 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) expression[V] {
 	}
 }
 
-func (p *Parser[V]) parseArgs(tokenizer *Tokenizer) []expression[V] {
+func (p *Parser[V]) parseArgs(tokenizer *Tokenizer, closeList TokenType) []expression[V] {
 	var args []expression[V]
 	for {
 		args = append(args, p.parse(tokenizer, 0))
 		t := tokenizer.Next()
-		if t.typ == tClose {
+		if t.typ == closeList {
 			return args
 		}
 		if t.typ != tComma {

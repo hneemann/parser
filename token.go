@@ -12,6 +12,8 @@ const (
 	tIdent TokenType = iota
 	tOpen
 	tClose
+	tOpenBracket
+	tCloseBracket
 	tComma
 	tNumber
 	tString
@@ -104,6 +106,10 @@ func (t *Tokenizer) run(tokens chan<- Token) {
 			tokens <- Token{tOpen, "("}
 		case ')':
 			tokens <- Token{tClose, ")"}
+		case '[':
+			tokens <- Token{tOpenBracket, "["}
+		case ']':
+			tokens <- Token{tCloseBracket, "]"}
 		case ',':
 			tokens <- Token{tComma, ","}
 		case '"':

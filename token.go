@@ -14,7 +14,11 @@ const (
 	tClose
 	tOpenBracket
 	tCloseBracket
+	tOpenCurly
+	tCloseCurly
+	tDot
 	tComma
+	tColon
 	tNumber
 	tString
 	tOperate
@@ -110,6 +114,14 @@ func (t *Tokenizer) run(tokens chan<- Token) {
 			tokens <- Token{tOpenBracket, "["}
 		case ']':
 			tokens <- Token{tCloseBracket, "]"}
+		case '{':
+			tokens <- Token{tOpenCurly, "{"}
+		case '}':
+			tokens <- Token{tCloseCurly, "}"}
+		case '.':
+			tokens <- Token{tDot, "."}
+		case ':':
+			tokens <- Token{tColon, ":"}
 		case ',':
 			tokens <- Token{tComma, ","}
 		case '"':

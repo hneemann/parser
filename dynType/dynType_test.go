@@ -40,6 +40,10 @@ func Test_Simple(t *testing.T) {
 		{name: "list 1", exp: "1 ~ [1,2,3]", res: vBool(true)},
 		{name: "list 2", exp: "1 ~ [4,2,3]", res: vBool(false)},
 		{name: "list index", exp: "[4,2,3][1]", res: vFloat(2)},
+
+		{name: "map 1", exp: "{k1:1,k2:5}.k2", res: vFloat(5)},
+		{name: "map 2", exp: "{k1:[1,2,3],k2:[4,5,6]}.k2[1]", res: vFloat(5)},
+		{name: "map 3", exp: "{k1:[1,2,3],k2:[4,{a:\"true\",b:\"false\"},6]}.k2[1].a", res: vString("true")},
 	}
 
 	p := New()

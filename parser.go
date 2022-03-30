@@ -62,6 +62,7 @@ type Parser[V any] struct {
 	numToValue    func(s string) (V, error)
 	strToValue    func(s string) (V, error)
 	arrayHandler  Array[V]
+	mapHandler    Map[V]
 	textOperators map[string]string
 	number        Matcher
 	identifier    Matcher
@@ -88,6 +89,14 @@ type Array[V any] interface {
 	Create([]V) V
 	// GetElement returns a value from an array
 	GetElement(index V, list V) (V, error)
+}
+
+// Map allows creating and to access arrays
+type Map[V any] interface {
+	// Create creates a map
+	Create(map[string]V) V
+	// GetElement returns a value from the map
+	GetElement(key string, mapValue V) (V, error)
 }
 
 type expression[V any] func(context Variables[V]) V
@@ -170,9 +179,15 @@ func (p *Parser[V]) ValFromStr(toVal func(val string) (V, error)) *Parser[V] {
 	return p
 }
 
-// ValFromList is used to set a converter that creates values from a list of values
+// ArrayHandler is used to set a converter that creates values from a list of values
 func (p *Parser[V]) ArrayHandler(h Array[V]) *Parser[V] {
 	p.arrayHandler = h
+	return p
+}
+
+// MapHandler is used to set a converter that creates values from a map of values
+func (p *Parser[V]) MapHandler(m Map[V]) *Parser[V] {
+	p.mapHandler = m
 	return p
 }
 
@@ -246,27 +261,50 @@ func (p *Parser[V]) nextParserCall(op int) parserFunc[V] {
 
 func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) expression[V] {
 	expression := p.parseLiteral(tokenizer)
-	if tokenizer.Peek().typ == tOpenBracket {
-		if p.arrayHandler == nil {
-			panic("unknown token type: " + tokenizer.Next().image)
-		}
-		tokenizer.Next()
-		indexExpr := p.parse(tokenizer, 0)
-		t := tokenizer.Next()
-		if t.typ != tCloseBracket {
-			panic(unexpected("}", t))
-		}
-		return func(context Variables[V]) V {
-			index := indexExpr(context)
-			list := expression(context)
-			v, err := p.arrayHandler.GetElement(index, list)
-			if err != nil {
-				panic(fmt.Errorf("index error: %w", err))
+	for {
+		inner := expression
+		switch tokenizer.Peek().typ {
+		case tDot:
+			if p.mapHandler == nil {
+				panic("unknown token type: " + tokenizer.Next().image)
 			}
-			return v
+			tokenizer.Next()
+			t := tokenizer.Next()
+			if t.typ != tIdent {
+				panic("invalid token: " + t.image)
+			}
+			name := t.image
+			expression = func(context Variables[V]) V {
+				mapValue := inner(context)
+				v, err := p.mapHandler.GetElement(name, mapValue)
+				if err != nil {
+					panic(fmt.Errorf("index error: %w", err))
+				}
+				return v
+			}
+		case tOpenBracket:
+			if p.arrayHandler == nil {
+				panic("unknown token type: " + tokenizer.Next().image)
+			}
+			tokenizer.Next()
+			indexExpr := p.parse(tokenizer, 0)
+			t := tokenizer.Next()
+			if t.typ != tCloseBracket {
+				panic(unexpected("}", t))
+			}
+			expression = func(context Variables[V]) V {
+				index := indexExpr(context)
+				list := inner(context)
+				v, err := p.arrayHandler.GetElement(index, list)
+				if err != nil {
+					panic(fmt.Errorf("index error: %w", err))
+				}
+				return v
+			}
+		default:
+			return expression
 		}
 	}
-	return expression
 }
 
 func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) expression[V] {
@@ -302,6 +340,18 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) expression[V] {
 			} else {
 				panic("function '" + name + "' not found")
 			}
+		}
+	case tOpenCurly:
+		if p.mapHandler == nil {
+			panic("unknown token type: " + t.image)
+		}
+		args := p.parseMap(tokenizer)
+		return func(context Variables[V]) V {
+			m := map[string]V{}
+			for k, v := range args {
+				m[k] = v(context)
+			}
+			return p.mapHandler.Create(m)
 		}
 	case tOpenBracket:
 		if p.arrayHandler == nil {
@@ -367,6 +417,26 @@ func (p *Parser[V]) parseArgs(tokenizer *Tokenizer, closeList TokenType) []expre
 			return args
 		}
 		if t.typ != tComma {
+			panic(unexpected(",", t))
+		}
+	}
+}
+
+func (p Parser[V]) parseMap(tokenizer *Tokenizer) map[string]expression[V] {
+	m := map[string]expression[V]{}
+	for {
+		switch t := tokenizer.Next(); t.typ {
+		case tCloseCurly:
+			return m
+		case tIdent:
+			if c := tokenizer.Next(); c.typ != tColon {
+				panic(unexpected(":", c))
+			}
+			m[t.image] = p.parse(tokenizer, 0)
+			if tokenizer.Peek().typ == tComma {
+				tokenizer.Next()
+			}
+		default:
 			panic(unexpected(",", t))
 		}
 	}

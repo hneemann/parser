@@ -89,7 +89,35 @@ func (v vList) String() string {
 	return b.String()
 }
 
+type vMap map[string]Value
+
+func (v vMap) Bool() bool {
+	return false
+}
+
 func (v vList) Float() float64 {
+	return 0
+}
+
+func (v vMap) String() string {
+	var b bytes.Buffer
+	b.WriteString("{")
+	first := true
+	for k, v := range v {
+		if first {
+			first = false
+		} else {
+			b.WriteString(",")
+		}
+		b.WriteString(k)
+		b.WriteString(":")
+		b.WriteString(v.String())
+	}
+	b.WriteString("}")
+	return b.String()
+}
+
+func (v vMap) Float() float64 {
 	return 0
 }
 
@@ -249,14 +277,14 @@ func parseStr(s string) (Value, error) {
 	return vString(s), nil
 }
 
-type convertList struct {
+type arrayHandler struct {
 }
 
-func (c convertList) Create(v []Value) Value {
+func (c arrayHandler) Create(v []Value) Value {
 	return vList(v)
 }
 
-func (c convertList) GetElement(i Value, list Value) (Value, error) {
+func (c arrayHandler) GetElement(i Value, list Value) (Value, error) {
 	if list, ok := list.(vList); ok {
 		i := int(math.Round(i.Float()))
 		if i < 0 || i >= len(list) {
@@ -265,6 +293,26 @@ func (c convertList) GetElement(i Value, list Value) (Value, error) {
 		return list[i], nil
 	} else {
 		return vBool(false), fmt.Errorf("%v is not a list", list)
+	}
+}
+
+type mapHandler struct {
+}
+
+func (m mapHandler) Create(aMap map[string]Value) Value {
+	return vMap(aMap)
+}
+
+func (m mapHandler) GetElement(key string, mapValue Value) (Value, error) {
+	if m2, ok := mapValue.(vMap); ok {
+		if v, ok := m2[key]; ok {
+			return v, nil
+		} else {
+			return vBool(false), fmt.Errorf("%s not available in %v", key, mapValue)
+		}
+
+	} else {
+		return vBool(false), fmt.Errorf("%v is not a map", mapValue)
 	}
 }
 
@@ -281,7 +329,8 @@ func New() *parser.Parser[Value] {
 		Func("string", func(a ...Value) Value { return vString(a[0].String()) }, 1, 1).
 		ValFromNum(parseNum).
 		ValFromStr(parseStr).
-		ArrayHandler(convertList{}).
+		ArrayHandler(arrayHandler{}).
+		MapHandler(mapHandler{}).
 		Unary("-", vNeg).
 		Unary("!", vNot).
 		Op("|", vOr).

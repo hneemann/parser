@@ -336,6 +336,7 @@ func New() *parser.Parser[Value] {
 		Op("|", vOr).
 		Op("&", vAnd).
 		Op("=", vEqual).
+		Op("!=", func(a, b Value) Value { return vBool(!vEqual(a, b).Bool()) }).
 		Op("~", vLike).
 		Op("<", vLess).
 		Op(">", swap(vLess)).

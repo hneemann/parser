@@ -18,12 +18,16 @@ func Test_Simple(t *testing.T) {
 		{name: "and false", exp: "1<2 & 3>5", res: vBool(false)},
 		{name: "or", exp: "1<2 | 3>5", res: vBool(true)},
 		{name: "or false", exp: "2<1 | 3>5", res: vBool(false)},
+		{name: "lessGr", exp: "1<2 = 5>3", res: vBool(true)},
+		{name: "lessGr2", exp: "1<2 != 5>3", res: vBool(false)},
+
 		{name: "conv bool to string", exp: "string(1<2)", res: vString("true")},
 		{name: "conv bool to string", exp: "string(1>2)", res: vString("false")},
 		{name: "conv bool to float", exp: "float(1<2)", res: vFloat(1)},
 		{name: "conv bool to float", exp: "float(1>2)", res: vFloat(0)},
 		{name: "conv bool to bool", exp: "bool(1<2)", res: vBool(true)},
 		{name: "conv bool to bool", exp: "bool(1>2)", res: vBool(false)},
+
 		{name: "conv float to string", exp: "string(1)", res: vString("1.000000")},
 		{name: "conv float to float", exp: "float(1)", res: vFloat(1)},
 		{name: "conv float to bool", exp: "bool(1)", res: vBool(true)},

@@ -64,9 +64,9 @@ func NewFloat() *Parser[float64] {
 		Unary("-", func(a float64) float64 { return -a }).
 		Unary("!", func(a float64) float64 {
 			if a == 0 {
-				return 0
-			} else {
 				return 1
+			} else {
+				return 0
 			}
 		}).
 		Func("sin", func(a ...float64) float64 { return math.Sin(a[0]) }, 1, 1).

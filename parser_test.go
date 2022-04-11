@@ -46,9 +46,12 @@ func Test_Bool(t *testing.T) {
 
 	assert.EqualValues(t, 1, eval(t, must(t, p, "5=5")))
 	assert.EqualValues(t, 0, eval(t, must(t, p, "5=4")))
+	assert.EqualValues(t, 1, eval(t, must(t, p, "!(4=5)")))
 
 	assert.EqualValues(t, 1, eval(t, must(t, p, "1=1 & 2=2")))
 	assert.EqualValues(t, 0, eval(t, must(t, p, "1=1 & 2=3")))
+
+	assert.EqualValues(t, 1, eval(t, must(t, p, "!(1=2) & 2=2")))
 }
 
 func Test_Var(t *testing.T) {

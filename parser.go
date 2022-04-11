@@ -370,7 +370,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) expression[V] {
 		if u == nil {
 			panic("unary operator '" + t.image + "' not found!")
 		}
-		e := p.parse(tokenizer, 0)
+		e := p.parseLiteral(tokenizer)
 		return func(context Variables[V]) V {
 			return u(e(context))
 		}

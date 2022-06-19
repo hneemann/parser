@@ -11,7 +11,7 @@ import (
 
 type operator[V any] struct {
 	operator string
-	operate  func(a, b V) V
+	operate  func(a, b Expression[V], context Variables[V]) V
 }
 
 type simpleNumber struct {
@@ -99,7 +99,7 @@ type Map[V any] interface {
 	GetElement(key string, mapValue V) (V, error)
 }
 
-type expression[V any] func(context Variables[V]) V
+type Expression[V any] func(context Variables[V]) V
 
 // Function is the return type of the parser
 type Function[V any] func(context Variables[V]) (V, error)
@@ -119,6 +119,15 @@ func New[V any]() *Parser[V] {
 // The name gives the operation name e.g."+" and the function
 // needs to implement the operation.
 func (p *Parser[V]) Op(name string, operate func(a, b V) V) *Parser[V] {
+	return p.OpContext(name, func(a, b Expression[V], c Variables[V]) V {
+		return operate(a(c), b(c))
+	})
+}
+
+// OpContext adds an operation to the parser
+// The name gives the operation name e.g."+" and the function
+// needs to implement the operation.
+func (p *Parser[V]) OpContext(name string, operate func(a, b Expression[V], context Variables[V]) V) *Parser[V] {
 	p.operators = append(p.operators, operator[V]{
 		operator: name,
 		operate:  operate,
@@ -228,9 +237,9 @@ func (p *Parser[V]) Parse(str string) (f Function[V], err error) {
 	}, nil
 }
 
-type parserFunc[V any] func(tokenizer *Tokenizer) expression[V]
+type parserFunc[V any] func(tokenizer *Tokenizer) Expression[V]
 
-func (p *Parser[V]) parse(tokenizer *Tokenizer, op int) expression[V] {
+func (p *Parser[V]) parse(tokenizer *Tokenizer, op int) Expression[V] {
 	next := p.nextParserCall(op)
 	operator := p.operators[op]
 	a := next(tokenizer)
@@ -241,7 +250,7 @@ func (p *Parser[V]) parse(tokenizer *Tokenizer, op int) expression[V] {
 			aa := a
 			bb := next(tokenizer)
 			a = func(context Variables[V]) V {
-				return operator.operate(aa(context), bb(context))
+				return operator.operate(aa, bb, context)
 			}
 		} else {
 			return a
@@ -251,7 +260,7 @@ func (p *Parser[V]) parse(tokenizer *Tokenizer, op int) expression[V] {
 
 func (p *Parser[V]) nextParserCall(op int) parserFunc[V] {
 	if op+1 < len(p.operators) {
-		return func(tokenizer *Tokenizer) expression[V] {
+		return func(tokenizer *Tokenizer) Expression[V] {
 			return p.parse(tokenizer, op+1)
 		}
 	} else {
@@ -259,7 +268,7 @@ func (p *Parser[V]) nextParserCall(op int) parserFunc[V] {
 	}
 }
 
-func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) expression[V] {
+func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 	expression := p.parseLiteral(tokenizer)
 	for {
 		inner := expression
@@ -307,7 +316,7 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) expression[V] {
 	}
 }
 
-func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) expression[V] {
+func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 	t := tokenizer.Next()
 	switch t.typ {
 	case tIdent:
@@ -408,8 +417,8 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) expression[V] {
 	}
 }
 
-func (p *Parser[V]) parseArgs(tokenizer *Tokenizer, closeList TokenType) []expression[V] {
-	var args []expression[V]
+func (p *Parser[V]) parseArgs(tokenizer *Tokenizer, closeList TokenType) []Expression[V] {
+	var args []Expression[V]
 	for {
 		args = append(args, p.parse(tokenizer, 0))
 		t := tokenizer.Next()
@@ -422,8 +431,8 @@ func (p *Parser[V]) parseArgs(tokenizer *Tokenizer, closeList TokenType) []expre
 	}
 }
 
-func (p Parser[V]) parseMap(tokenizer *Tokenizer) map[string]expression[V] {
-	m := map[string]expression[V]{}
+func (p Parser[V]) parseMap(tokenizer *Tokenizer) map[string]Expression[V] {
+	m := map[string]Expression[V]{}
 	for {
 		switch t := tokenizer.Next(); t.typ {
 		case tCloseCurly:

@@ -101,7 +101,7 @@ func (t *Tokenizer) Next() Token {
 func (t *Tokenizer) run(tokens chan<- Token) {
 	for {
 		switch t.next() {
-		case ' ':
+		case ' ', '\n', '\r', '\t':
 			continue
 		case EOF:
 			close(tokens)

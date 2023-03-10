@@ -20,7 +20,8 @@ func Test(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			f, err := NewError().Parse(test.exp)
+			f, isConst, err := NewError().Parse(test.exp)
+			assert.True(t, isConst, test.name)
 			assert.NoError(t, err)
 			r, err := f(nil)
 			assert.NoError(t, err)
@@ -52,7 +53,8 @@ func Test_NonConst(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			f, err := NewError().Parse(test.exp)
+			f, isConst, err := NewError().Parse(test.exp)
+			assert.False(t, isConst, test.name)
 			assert.NoError(t, err)
 			r, err := f(vars)
 			assert.NoError(t, err)

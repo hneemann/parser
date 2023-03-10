@@ -60,6 +60,7 @@ type Parser[V any] struct {
 	operators     []operator[V]
 	unary         map[string]func(a V) V
 	functions     map[string]function[V]
+	constants     map[string]V
 	numToValue    func(s string) (V, error)
 	strToValue    func(s string) (V, error)
 	arrayHandler  Array[V]
@@ -126,6 +127,7 @@ func New[V any]() *Parser[V] {
 	return &Parser[V]{
 		unary:      map[string]func(V) V{},
 		functions:  map[string]function[V]{},
+		constants:  map[string]V{},
 		number:     simpleNumber{},
 		identifier: simpleIdentifier{},
 		operator:   simpleOperator{},
@@ -169,6 +171,7 @@ func (p *Parser[V]) Func(name string, f func(a ...V) V, min, max int) *Parser[V]
 	return p
 }
 
+//Func declares a pure function
 func (p *Parser[V]) PureFunc(name string, f func(a ...V) V, min, max int) *Parser[V] {
 	p.functions[name] = function[V]{
 		minArgs:  min,
@@ -176,6 +179,12 @@ func (p *Parser[V]) PureFunc(name string, f func(a ...V) V, min, max int) *Parse
 		function: f,
 		isPure:   true,
 	}
+	return p
+}
+
+//Const declares a constant
+func (p *Parser[V]) Const(name string, val V) *Parser[V] {
+	p.constants[name] = val
 	return p
 }
 
@@ -229,7 +238,7 @@ func (p *Parser[V]) MapHandler(m Map[V]) *Parser[V] {
 }
 
 // Parse parses the given string and returns a Function
-func (p *Parser[V]) Parse(str string) (f Function[V], err error) {
+func (p *Parser[V]) Parse(str string) (f Function[V], isConst bool, err error) {
 	defer func() {
 		rec := recover()
 		if rec != nil {
@@ -248,14 +257,14 @@ func (p *Parser[V]) Parse(str string) (f Function[V], err error) {
 	e := p.parse(tokenizer, 0)
 	t := tokenizer.Next()
 	if t.typ != tEof {
-		return nil, errors.New(unexpected("EOF", t))
+		return nil, false, errors.New(unexpected("EOF", t))
 	}
 
 	if ec, isConst := e.(ConstExpression[V]); isConst {
 		c := ec.Eval(nil)
 		return func(context Variables[V]) (v V, ierr error) {
 			return c, nil
-		}, nil
+		}, true, nil
 	}
 
 	return func(context Variables[V]) (v V, ierr error) {
@@ -270,7 +279,7 @@ func (p *Parser[V]) Parse(str string) (f Function[V], err error) {
 			}
 		}()
 		return e.Eval(context), nil
-	}, nil
+	}, false, nil
 }
 
 type parserFunc[V any] func(tokenizer *Tokenizer) Expression[V]
@@ -384,9 +393,16 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 	case tIdent:
 		name := t.image
 		if tokenizer.Peek().typ != tOpen {
+			// check if 'name' is a constant
+			val, ok := p.constants[name]
+			if ok {
+				return ConstExpression[V]{val}
+			}
+
+			// not a constant, needs to be requested at evaluation time
 			return ExpressionFunc[V](func(context Variables[V]) V {
 				if context == nil {
-					panic("context in nil, variable '" + name + "' not found!")
+					panic("context is nil, variable '" + name + "' not found!")
 				}
 				if v, ok := context.Get(name); ok {
 					return v
@@ -506,6 +522,10 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 
 func (p *Parser[V]) parseArgs(tokenizer *Tokenizer, closeList TokenType) ([]Expression[V], bool) {
 	var args []Expression[V]
+	if tokenizer.Peek().typ == closeList {
+		tokenizer.Next()
+		return args, true
+	}
 	allConst := true
 	for {
 		element := p.parse(tokenizer, 0)

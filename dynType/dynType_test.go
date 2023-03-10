@@ -3,6 +3,7 @@ package dynType
 import (
 	"github.com/hneemann/parser"
 	"github.com/stretchr/testify/assert"
+	"math"
 	"testing"
 )
 
@@ -53,7 +54,8 @@ func Test_Simple(t *testing.T) {
 
 	p := New()
 	for _, test := range tests {
-		v, err := p.Parse(test.exp)
+		v, isConst, err := p.Parse(test.exp)
+		assert.True(t, isConst, test.name)
 		assert.NoError(t, err, test.name)
 		r, err := v(nil)
 		assert.NoError(t, err, test.name)
@@ -120,7 +122,8 @@ func Test_NonConst(t *testing.T) {
 
 	p := New()
 	for _, test := range tests {
-		v, err := p.Parse(test.exp)
+		v, isConst, err := p.Parse(test.exp)
+		assert.False(t, isConst, test.name)
 		assert.NoError(t, err, test.name)
 		r, err := v(vars)
 		assert.NoError(t, err, test.name)
@@ -128,8 +131,28 @@ func Test_NonConst(t *testing.T) {
 	}
 }
 
+func Test_DeclareConst(t *testing.T) {
+	tests := []struct {
+		name string
+		exp  string
+		res  Value
+	}{
+		{name: "simple", exp: "pi*2", res: vFloat(math.Pi * 2)},
+	}
+
+	p := New().Const("pi", vFloat(math.Pi))
+	for _, test := range tests {
+		v, isConst, err := p.Parse(test.exp)
+		assert.True(t, isConst, test.name)
+		assert.NoError(t, err, test.name)
+		r, err := v(nil)
+		assert.NoError(t, err, test.name)
+		assert.EqualValues(t, test.res, r, test.name)
+	}
+}
+
 func Test_Invalid(t *testing.T) {
 	p := New()
-	_, err := p.Parse("2<3 & \"test\"")
+	_, _, err := p.Parse("2<3 & \"test\"")
 	assert.Error(t, err)
 }

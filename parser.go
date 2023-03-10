@@ -101,12 +101,12 @@ type Map[V any] interface {
 }
 
 type Expression[V any] interface {
-	eval(context Variables[V]) V
+	Eval(context Variables[V]) V
 }
 
 type ExpressionFunc[V any] func(context Variables[V]) V
 
-func (e ExpressionFunc[V]) eval(context Variables[V]) V {
+func (e ExpressionFunc[V]) Eval(context Variables[V]) V {
 	return e(context)
 }
 
@@ -114,7 +114,7 @@ type ConstExpression[V any] struct {
 	constVal V
 }
 
-func (e ConstExpression[V]) eval(context Variables[V]) V {
+func (e ConstExpression[V]) Eval(context Variables[V]) V {
 	return e.constVal
 }
 
@@ -137,7 +137,7 @@ func New[V any]() *Parser[V] {
 // needs to implement the operation.
 func (p *Parser[V]) Op(name string, operate func(a, b V) V) *Parser[V] {
 	return p.OpContext(name, func(a, b Expression[V], c Variables[V]) V {
-		return operate(a.eval(c), b.eval(c))
+		return operate(a.Eval(c), b.Eval(c))
 	})
 }
 
@@ -252,7 +252,7 @@ func (p *Parser[V]) Parse(str string) (f Function[V], err error) {
 	}
 
 	if ec, isConst := e.(ConstExpression[V]); isConst {
-		c := ec.eval(nil)
+		c := ec.Eval(nil)
 		return func(context Variables[V]) (v V, ierr error) {
 			return c, nil
 		}, nil
@@ -269,7 +269,7 @@ func (p *Parser[V]) Parse(str string) (f Function[V], err error) {
 				}
 			}
 		}()
-		return e.eval(context), nil
+		return e.Eval(context), nil
 	}, nil
 }
 
@@ -335,7 +335,7 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 				expression = ConstExpression[V]{v}
 			} else {
 				expression = ExpressionFunc[V](func(context Variables[V]) V {
-					mapValue := inner.eval(context)
+					mapValue := inner.Eval(context)
 					v, err := p.mapHandler.GetElement(name, mapValue)
 					if err != nil {
 						panic(fmt.Errorf("index error: %w", err))
@@ -363,8 +363,8 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 				expression = ConstExpression[V]{r}
 			} else {
 				expression = ExpressionFunc[V](func(context Variables[V]) V {
-					index := indexExpr.eval(context)
-					list := inner.eval(context)
+					index := indexExpr.Eval(context)
+					list := inner.Eval(context)
 					v, err := p.arrayHandler.GetElement(index, list)
 					if err != nil {
 						panic(fmt.Errorf("index error: %w", err))
@@ -406,7 +406,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 					if f.isPure && allArgsConst {
 						a := make([]V, len(args))
 						for i, e := range args {
-							a[i] = e.eval(nil)
+							a[i] = e.Eval(nil)
 						}
 						r := f.function(a...)
 						return ConstExpression[V]{r}
@@ -414,7 +414,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 					return ExpressionFunc[V](func(context Variables[V]) V {
 						a := make([]V, len(args))
 						for i, e := range args {
-							a[i] = e.eval(context)
+							a[i] = e.Eval(context)
 						}
 						return f.function(a...)
 					})
@@ -431,14 +431,14 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 		if allArgsConst {
 			m := map[string]V{}
 			for k, v := range args {
-				m[k] = v.eval(nil)
+				m[k] = v.Eval(nil)
 			}
 			return ConstExpression[V]{p.mapHandler.Create(m)}
 		}
 		return ExpressionFunc[V](func(context Variables[V]) V {
 			m := map[string]V{}
 			for k, v := range args {
-				m[k] = v.eval(context)
+				m[k] = v.Eval(context)
 			}
 			return p.mapHandler.Create(m)
 		})
@@ -450,14 +450,14 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 		if allArgsConst {
 			a := make([]V, len(args))
 			for i, e := range args {
-				a[i] = e.eval(nil)
+				a[i] = e.Eval(nil)
 			}
 			return ConstExpression[V]{p.arrayHandler.Create(a)}
 		}
 		return ExpressionFunc[V](func(context Variables[V]) V {
 			a := make([]V, len(args))
 			for i, e := range args {
-				a[i] = e.eval(context)
+				a[i] = e.Eval(context)
 			}
 			return p.arrayHandler.Create(a)
 		})
@@ -471,7 +471,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 			return ConstExpression[V]{u(ec.constVal)}
 		} else {
 			return ExpressionFunc[V](func(context Variables[V]) V {
-				return u(e.eval(context))
+				return u(e.Eval(context))
 			})
 		}
 	case tNumber:

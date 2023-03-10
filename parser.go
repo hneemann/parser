@@ -51,6 +51,7 @@ type function[V any] struct {
 	minArgs  int
 	maxArgs  int
 	function func(a ...V) V
+	isPure   bool
 }
 
 // Parser is the base class of the parser
@@ -99,7 +100,23 @@ type Map[V any] interface {
 	GetElement(key string, mapValue V) (V, error)
 }
 
-type Expression[V any] func(context Variables[V]) V
+type Expression[V any] interface {
+	eval(context Variables[V]) V
+}
+
+type ExpressionFunc[V any] func(context Variables[V]) V
+
+func (e ExpressionFunc[V]) eval(context Variables[V]) V {
+	return e(context)
+}
+
+type ConstExpression[V any] struct {
+	constVal V
+}
+
+func (e ConstExpression[V]) eval(context Variables[V]) V {
+	return e.constVal
+}
 
 // Function is the return type of the parser
 type Function[V any] func(context Variables[V]) (V, error)
@@ -120,7 +137,7 @@ func New[V any]() *Parser[V] {
 // needs to implement the operation.
 func (p *Parser[V]) Op(name string, operate func(a, b V) V) *Parser[V] {
 	return p.OpContext(name, func(a, b Expression[V], c Variables[V]) V {
-		return operate(a(c), b(c))
+		return operate(a.eval(c), b.eval(c))
 	})
 }
 
@@ -147,6 +164,17 @@ func (p *Parser[V]) Func(name string, f func(a ...V) V, min, max int) *Parser[V]
 		minArgs:  min,
 		maxArgs:  max,
 		function: f,
+		isPure:   false,
+	}
+	return p
+}
+
+func (p *Parser[V]) PureFunc(name string, f func(a ...V) V, min, max int) *Parser[V] {
+	p.functions[name] = function[V]{
+		minArgs:  min,
+		maxArgs:  max,
+		function: f,
+		isPure:   true,
 	}
 	return p
 }
@@ -222,6 +250,14 @@ func (p *Parser[V]) Parse(str string) (f Function[V], err error) {
 	if t.typ != tEof {
 		return nil, errors.New(unexpected("EOF", t))
 	}
+
+	if ec, isConst := e.(ConstExpression[V]); isConst {
+		c := ec.eval(nil)
+		return func(context Variables[V]) (v V, ierr error) {
+			return c, nil
+		}, nil
+	}
+
 	return func(context Variables[V]) (v V, ierr error) {
 		defer func() {
 			rec := recover()
@@ -233,7 +269,7 @@ func (p *Parser[V]) Parse(str string) (f Function[V], err error) {
 				}
 			}
 		}()
-		return e(context), nil
+		return e.eval(context), nil
 	}, nil
 }
 
@@ -249,8 +285,16 @@ func (p *Parser[V]) parse(tokenizer *Tokenizer, op int) Expression[V] {
 			tokenizer.Next()
 			aa := a
 			bb := next(tokenizer)
-			a = func(context Variables[V]) V {
-				return operator.operate(aa, bb, context)
+
+			ac, aConst := aa.(ConstExpression[V])
+			bc, bConst := bb.(ConstExpression[V])
+			if aConst && bConst {
+				r := operator.operate(ac, bc, nil)
+				a = ConstExpression[V]{constVal: r}
+			} else {
+				a = ExpressionFunc[V](func(context Variables[V]) V {
+					return operator.operate(aa, bb, context)
+				})
 			}
 		} else {
 			return a
@@ -283,13 +327,21 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 				panic("invalid token: " + t.image)
 			}
 			name := t.image
-			expression = func(context Variables[V]) V {
-				mapValue := inner(context)
-				v, err := p.mapHandler.GetElement(name, mapValue)
+			if ic, isConst := inner.(ConstExpression[V]); isConst {
+				v, err := p.mapHandler.GetElement(name, ic.constVal)
 				if err != nil {
 					panic(fmt.Errorf("index error: %w", err))
 				}
-				return v
+				expression = ConstExpression[V]{v}
+			} else {
+				expression = ExpressionFunc[V](func(context Variables[V]) V {
+					mapValue := inner.eval(context)
+					v, err := p.mapHandler.GetElement(name, mapValue)
+					if err != nil {
+						panic(fmt.Errorf("index error: %w", err))
+					}
+					return v
+				})
 			}
 		case tOpenBracket:
 			if p.arrayHandler == nil {
@@ -301,14 +353,24 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 			if t.typ != tCloseBracket {
 				panic(unexpected("}", t))
 			}
-			expression = func(context Variables[V]) V {
-				index := indexExpr(context)
-				list := inner(context)
-				v, err := p.arrayHandler.GetElement(index, list)
+			ie, ic := indexExpr.(ConstExpression[V])
+			le, lc := inner.(ConstExpression[V])
+			if ic && lc {
+				r, err := p.arrayHandler.GetElement(ie.constVal, le.constVal)
 				if err != nil {
 					panic(fmt.Errorf("index error: %w", err))
 				}
-				return v
+				expression = ConstExpression[V]{r}
+			} else {
+				expression = ExpressionFunc[V](func(context Variables[V]) V {
+					index := indexExpr.eval(context)
+					list := inner.eval(context)
+					v, err := p.arrayHandler.GetElement(index, list)
+					if err != nil {
+						panic(fmt.Errorf("index error: %w", err))
+					}
+					return v
+				})
 			}
 		default:
 			return expression
@@ -322,29 +384,40 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 	case tIdent:
 		name := t.image
 		if tokenizer.Peek().typ != tOpen {
-			return func(context Variables[V]) V {
+			return ExpressionFunc[V](func(context Variables[V]) V {
+				if context == nil {
+					panic("context in nil, variable '" + name + "' not found!")
+				}
 				if v, ok := context.Get(name); ok {
 					return v
 				} else {
 					panic("variable '" + name + "' not found!")
 				}
-			}
+			})
 		} else {
 			tokenizer.Next()
-			args := p.parseArgs(tokenizer, tClose)
+			args, allArgsConst := p.parseArgs(tokenizer, tClose)
 			if f, ok := p.functions[name]; ok {
 				if len(args) < f.minArgs {
 					panic("function '" + name + "' requires at least " + strconv.Itoa(f.minArgs) + " arguments")
 				} else if len(args) > f.maxArgs {
 					panic("function '" + name + "' requires at most " + strconv.Itoa(f.maxArgs) + " arguments")
 				} else {
-					return func(context Variables[V]) V {
+					if f.isPure && allArgsConst {
 						a := make([]V, len(args))
 						for i, e := range args {
-							a[i] = e(context)
+							a[i] = e.eval(nil)
+						}
+						r := f.function(a...)
+						return ConstExpression[V]{r}
+					}
+					return ExpressionFunc[V](func(context Variables[V]) V {
+						a := make([]V, len(args))
+						for i, e := range args {
+							a[i] = e.eval(context)
 						}
 						return f.function(a...)
-					}
+					})
 				}
 			} else {
 				panic("function '" + name + "' not found")
@@ -354,34 +427,52 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 		if p.mapHandler == nil {
 			panic("unknown token type: " + t.image)
 		}
-		args := p.parseMap(tokenizer)
-		return func(context Variables[V]) V {
+		args, allArgsConst := p.parseMap(tokenizer)
+		if allArgsConst {
 			m := map[string]V{}
 			for k, v := range args {
-				m[k] = v(context)
+				m[k] = v.eval(nil)
+			}
+			return ConstExpression[V]{p.mapHandler.Create(m)}
+		}
+		return ExpressionFunc[V](func(context Variables[V]) V {
+			m := map[string]V{}
+			for k, v := range args {
+				m[k] = v.eval(context)
 			}
 			return p.mapHandler.Create(m)
-		}
+		})
 	case tOpenBracket:
 		if p.arrayHandler == nil {
 			panic("unknown token type: " + t.image)
 		}
-		args := p.parseArgs(tokenizer, tCloseBracket)
-		return func(context Variables[V]) V {
+		args, allArgsConst := p.parseArgs(tokenizer, tCloseBracket)
+		if allArgsConst {
 			a := make([]V, len(args))
 			for i, e := range args {
-				a[i] = e(context)
+				a[i] = e.eval(nil)
+			}
+			return ConstExpression[V]{p.arrayHandler.Create(a)}
+		}
+		return ExpressionFunc[V](func(context Variables[V]) V {
+			a := make([]V, len(args))
+			for i, e := range args {
+				a[i] = e.eval(context)
 			}
 			return p.arrayHandler.Create(a)
-		}
+		})
 	case tOperate:
 		u := p.unary[t.image]
 		if u == nil {
 			panic("unary operator '" + t.image + "' not found!")
 		}
 		e := p.parseLiteral(tokenizer)
-		return func(context Variables[V]) V {
-			return u(e(context))
+		if ec, isConst := e.(ConstExpression[V]); isConst {
+			return ConstExpression[V]{u(ec.constVal)}
+		} else {
+			return ExpressionFunc[V](func(context Variables[V]) V {
+				return u(e.eval(context))
+			})
 		}
 	case tNumber:
 		if p.numToValue == nil {
@@ -391,9 +482,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 		if err != nil {
 			panic(err)
 		}
-		return func(context Variables[V]) V {
-			return v
-		}
+		return ConstExpression[V]{v}
 	case tString:
 		if p.strToValue == nil {
 			panic("no string values allowed")
@@ -402,9 +491,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 		if err != nil {
 			panic(err)
 		}
-		return func(context Variables[V]) V {
-			return v
-		}
+		return ConstExpression[V]{v}
 	case tOpen:
 		e := p.parse(tokenizer, 0)
 		t := tokenizer.Next()
@@ -417,13 +504,18 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 	}
 }
 
-func (p *Parser[V]) parseArgs(tokenizer *Tokenizer, closeList TokenType) []Expression[V] {
+func (p *Parser[V]) parseArgs(tokenizer *Tokenizer, closeList TokenType) ([]Expression[V], bool) {
 	var args []Expression[V]
+	allConst := true
 	for {
-		args = append(args, p.parse(tokenizer, 0))
+		element := p.parse(tokenizer, 0)
+		if _, ok := element.(ConstExpression[V]); !ok {
+			allConst = false
+		}
+		args = append(args, element)
 		t := tokenizer.Next()
 		if t.typ == closeList {
-			return args
+			return args, allConst
 		}
 		if t.typ != tComma {
 			panic(unexpected(",", t))
@@ -431,17 +523,22 @@ func (p *Parser[V]) parseArgs(tokenizer *Tokenizer, closeList TokenType) []Expre
 	}
 }
 
-func (p Parser[V]) parseMap(tokenizer *Tokenizer) map[string]Expression[V] {
+func (p Parser[V]) parseMap(tokenizer *Tokenizer) (map[string]Expression[V], bool) {
 	m := map[string]Expression[V]{}
+	allEntriesConst := true
 	for {
 		switch t := tokenizer.Next(); t.typ {
 		case tCloseCurly:
-			return m
+			return m, allEntriesConst
 		case tIdent:
 			if c := tokenizer.Next(); c.typ != tColon {
 				panic(unexpected(":", c))
 			}
-			m[t.image] = p.parse(tokenizer, 0)
+			entry := p.parse(tokenizer, 0)
+			if _, isConst := entry.(ConstExpression[V]); !isConst {
+				allEntriesConst = false
+			}
+			m[t.image] = entry
 			if tokenizer.Peek().typ == tComma {
 				tokenizer.Next()
 			}

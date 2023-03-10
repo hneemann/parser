@@ -100,6 +100,9 @@ func parseStr(str string) (ValErr, error) {
 
 func NewError() *parser.Parser[ValErr] {
 	return parser.New[ValErr]().
+		PureFunc("error", func(args ...ValErr) ValErr {
+			return ValErr{Err: args[0].Val}
+		}, 1, 1).
 		Number(errNumber{}).
 		Op("+", func(a, b ValErr) ValErr { return ValErr{Val: a.Val + b.Val, Err: a.Err + b.Err} }).
 		Op("-", func(a, b ValErr) ValErr { return ValErr{Val: a.Val - b.Val, Err: a.Err + b.Err} }).

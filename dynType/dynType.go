@@ -324,9 +324,9 @@ func swap(f func(a Value, b Value) Value) func(a Value, b Value) Value {
 
 func New() *parser.Parser[Value] {
 	return parser.New[Value]().
-		Func("float", func(a ...Value) Value { return vFloat(a[0].Float()) }, 1, 1).
-		Func("bool", func(a ...Value) Value { return vBool(a[0].Bool()) }, 1, 1).
-		Func("string", func(a ...Value) Value { return vString(a[0].String()) }, 1, 1).
+		PureFunc("float", func(a ...Value) Value { return vFloat(a[0].Float()) }, 1, 1).
+		PureFunc("bool", func(a ...Value) Value { return vBool(a[0].Bool()) }, 1, 1).
+		PureFunc("string", func(a ...Value) Value { return vString(a[0].String()) }, 1, 1).
 		ValFromNum(parseNum).
 		ValFromStr(parseStr).
 		ArrayHandler(arrayHandler{}).

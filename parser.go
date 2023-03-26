@@ -161,6 +161,11 @@ func (p *Parser[V]) Unary(name string, operate func(a V) V) *Parser[V] {
 }
 
 //Func declares a function
+//Here, functions are allowed whose result does not depend only on the arguments.
+//This function may return different results if it is called several times with
+//the same arguments. For performance reasons no pure function should be declared here.
+//The random function is an example of a non-pure function: The result is different
+//for each call, even if the arguments are always the same.
 func (p *Parser[V]) Func(name string, f func(a ...V) V, min, max int) *Parser[V] {
 	p.functions[name] = function[V]{
 		minArgs:  min,
@@ -171,7 +176,12 @@ func (p *Parser[V]) Func(name string, f func(a ...V) V, min, max int) *Parser[V]
 	return p
 }
 
-//Func declares a pure function
+//PureFunc declares a pure function
+//A pure function is a function whose result depends only on its arguments.
+//If a pure function is called several times with the same arguments, always
+//the same result must be returned.
+//The sin function or the sqrt function are examples of a pure function: If the
+//argument is always the same, the result is also the same for each call.
 func (p *Parser[V]) PureFunc(name string, f func(a ...V) V, min, max int) *Parser[V] {
 	p.functions[name] = function[V]{
 		minArgs:  min,

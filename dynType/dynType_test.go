@@ -156,3 +156,25 @@ func Test_Invalid(t *testing.T) {
 	_, _, err := p.Parse("2<3 & \"test\"")
 	assert.Error(t, err)
 }
+
+func Test_stream(t *testing.T) {
+	tests := []struct {
+		name string
+		exp  string
+		res  Value
+	}{
+		{name: "first", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->a>1).First().b", res: vFloat(4)},
+		{name: "sum", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->a>1).Map(->a*b).Sum()", res: vFloat(99)},
+		{name: "reduce", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->a>1).Map(->a*b).Reduce(->value+this)", res: vFloat(99)},
+	}
+
+	p := New()
+	for _, test := range tests {
+		v, isConst, err := p.Parse(test.exp)
+		assert.False(t, isConst, test.name)
+		assert.NoError(t, err, test.name)
+		r, err := v(nil)
+		assert.NoError(t, err, test.name)
+		assert.EqualValues(t, test.res, r, test.name)
+	}
+}

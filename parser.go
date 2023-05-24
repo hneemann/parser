@@ -4,6 +4,7 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"unicode"
@@ -64,6 +65,7 @@ type Parser[V any] struct {
 	numToValue    func(s string) (V, error)
 	strToValue    func(s string) (V, error)
 	arrayHandler  Array[V]
+	lambdaHandler Lambda[V]
 	mapHandler    Map[V]
 	textOperators map[string]string
 	number        Matcher
@@ -93,7 +95,13 @@ type Array[V any] interface {
 	GetElement(index V, list V) (V, error)
 }
 
-// Map allows creating and to access arrays
+// Lambda allows creating Lambdas
+type Lambda[V any] interface {
+	// Create creates a Lambda
+	Create(e Expression[V]) V
+}
+
+// Map allows creating and to access maps
 type Map[V any] interface {
 	// Create creates a map
 	Create(map[string]V) V
@@ -241,6 +249,12 @@ func (p *Parser[V]) ArrayHandler(h Array[V]) *Parser[V] {
 	return p
 }
 
+// LambdaHandler is used to set a converter that creates lambdas from an expression
+func (p *Parser[V]) LambdaHandler(h Lambda[V]) *Parser[V] {
+	p.lambdaHandler = h
+	return p
+}
+
 // MapHandler is used to set a converter that creates values from a map of values
 func (p *Parser[V]) MapHandler(m Map[V]) *Parser[V] {
 	p.mapHandler = m
@@ -337,29 +351,61 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 		inner := expression
 		switch tokenizer.Peek().typ {
 		case tDot:
-			if p.mapHandler == nil {
-				panic("unknown token type: " + tokenizer.Next().image)
-			}
 			tokenizer.Next()
 			t := tokenizer.Next()
 			if t.typ != tIdent {
 				panic("invalid token: " + t.image)
 			}
 			name := t.image
-			if ic, isConst := inner.(ConstExpression[V]); isConst {
-				v, err := p.mapHandler.GetElement(name, ic.constVal)
-				if err != nil {
-					panic(fmt.Errorf("index error: %w", err))
+			if tokenizer.Peek().typ != tOpen {
+				//Map access
+				if p.mapHandler == nil {
+					panic("unknown token type: " + tokenizer.Next().image)
 				}
-				expression = ConstExpression[V]{v}
-			} else {
-				expression = ExpressionFunc[V](func(context Variables[V]) V {
-					mapValue := inner.Eval(context)
-					v, err := p.mapHandler.GetElement(name, mapValue)
+				if ic, isConst := inner.(ConstExpression[V]); isConst {
+					v, err := p.mapHandler.GetElement(name, ic.constVal)
 					if err != nil {
 						panic(fmt.Errorf("index error: %w", err))
 					}
-					return v
+					expression = ConstExpression[V]{v}
+				} else {
+					expression = ExpressionFunc[V](func(context Variables[V]) V {
+						mapValue := inner.Eval(context)
+						v, err := p.mapHandler.GetElement(name, mapValue)
+						if err != nil {
+							panic(fmt.Errorf("index error: %w", err))
+						}
+						return v
+					})
+				}
+			} else {
+				//Method call
+				tokenizer.Next()
+				args, _ := p.parseArgs(tokenizer, tClose)
+				expression = ExpressionFunc[V](func(context Variables[V]) V {
+					value := inner.Eval(context)
+
+					a := make([]reflect.Value, len(args)+1)
+					a[0] = reflect.ValueOf(value)
+					for i, e := range args {
+						a[i+1] = reflect.ValueOf(e.Eval(context))
+					}
+
+					typeOf := reflect.TypeOf(value)
+					if m, ok := typeOf.MethodByName(name); ok {
+						res := m.Func.Call(a)
+						if len(res) == 1 {
+							if v, ok := res[0].Interface().(V); ok {
+								return v
+							} else {
+								panic(fmt.Errorf("result of method %v is not a value. It is: %v", name, res[0]))
+							}
+						} else {
+							panic(fmt.Errorf("method %v does not return a single value: %v", name, len(res)))
+						}
+					} else {
+						panic(fmt.Errorf("method %v not found", name))
+					}
 				})
 			}
 		case tOpenBracket:
@@ -488,17 +534,22 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 			return p.arrayHandler.Create(a)
 		})
 	case tOperate:
-		u := p.unary[t.image]
-		if u == nil {
-			panic("unary operator '" + t.image + "' not found!")
-		}
-		e := p.parseLiteral(tokenizer)
-		if ec, isConst := e.(ConstExpression[V]); isConst {
-			return ConstExpression[V]{u(ec.constVal)}
+		if p.lambdaHandler != nil && t.image == "->" {
+			e := p.parse(tokenizer, 0)
+			return ConstExpression[V]{p.lambdaHandler.Create(e)}
 		} else {
-			return ExpressionFunc[V](func(context Variables[V]) V {
-				return u(e.Eval(context))
-			})
+			u := p.unary[t.image]
+			if u == nil {
+				panic("unary operator '" + t.image + "' not found!")
+			}
+			e := p.parseLiteral(tokenizer)
+			if ec, isConst := e.(ConstExpression[V]); isConst {
+				return ConstExpression[V]{u(ec.constVal)}
+			} else {
+				return ExpressionFunc[V](func(context Variables[V]) V {
+					return u(e.Eval(context))
+				})
+			}
 		}
 	case tNumber:
 		if p.numToValue == nil {

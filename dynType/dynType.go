@@ -69,6 +69,22 @@ func (v vBool) Float() float64 {
 	}
 }
 
+type vLambda struct {
+	e parser.Expression[Value]
+}
+
+func (v vLambda) Bool() bool {
+	return false
+}
+
+func (v vLambda) Float() float64 {
+	return 0
+}
+
+func (v vLambda) String() string {
+	return ""
+}
+
 type vList []Value
 
 func (v vList) Bool() bool {
@@ -87,6 +103,56 @@ func (v vList) String() string {
 	}
 	b.WriteString("]")
 	return b.String()
+}
+
+func createVars(e Value) parser.Variables[Value] {
+	if myMap, ok := e.(parser.Variables[Value]); ok {
+		return myMap
+	} else {
+		return vMap{"this": e}
+	}
+}
+
+func (v vList) Filter(lambda vLambda) vList {
+	var res vList
+	for _, entry := range v {
+		if lambda.e.Eval(createVars(entry)).Bool() {
+			res = append(res, entry)
+		}
+	}
+	return res
+}
+
+func (v vList) Map(lambda vLambda) vList {
+	var res vList
+	for _, entry := range v {
+		res = append(res, lambda.e.Eval(createVars(entry)))
+	}
+	return res
+}
+
+func (v vList) Reduce(lambda vLambda) Value {
+	var res Value
+	for i, entry := range v {
+		if i == 0 {
+			res = entry
+		} else {
+			res = lambda.e.Eval(vMap{"value": res, "this": entry})
+		}
+	}
+	return res
+}
+
+func (v vList) Sum() Value {
+	var res float64
+	for _, entry := range v {
+		res += entry.Float()
+	}
+	return vFloat(res)
+}
+
+func (v vList) First() Value {
+	return v[0]
 }
 
 type vMap map[string]Value
@@ -119,6 +185,11 @@ func (v vMap) String() string {
 
 func (v vMap) Float() float64 {
 	return 0
+}
+
+func (v vMap) Get(name string) (Value, bool) {
+	val, ok := v[name]
+	return val, ok
 }
 
 func notPossible(a Value, op string, b Value) string {
@@ -296,6 +367,13 @@ func (c arrayHandler) GetElement(i Value, list Value) (Value, error) {
 	}
 }
 
+type lambdaHandler struct {
+}
+
+func (c lambdaHandler) Create(e parser.Expression[Value]) Value {
+	return vLambda{e}
+}
+
 type mapHandler struct {
 }
 
@@ -330,7 +408,10 @@ func New() *parser.Parser[Value] {
 		ValFromNum(parseNum).
 		ValFromStr(parseStr).
 		ArrayHandler(arrayHandler{}).
+		LambdaHandler(lambdaHandler{}).
 		MapHandler(mapHandler{}).
+		Const("true", vBool(true)).
+		Const("false", vBool(false)).
 		Unary("-", vNeg).
 		Unary("!", vNot).
 		Op("|", vOr).

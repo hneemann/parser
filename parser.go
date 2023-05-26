@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 type operator[V any] struct {
@@ -58,19 +59,20 @@ type function[V any] struct {
 // Parser is the base class of the parser
 // V ist the value type this expression parser works on
 type Parser[V any] struct {
-	operators     []operator[V]
-	unary         map[string]func(a V) V
-	functions     map[string]function[V]
-	constants     map[string]V
-	numToValue    func(s string) (V, error)
-	strToValue    func(s string) (V, error)
-	arrayHandler  Array[V]
-	lambdaHandler Lambda[V]
-	mapHandler    Map[V]
-	textOperators map[string]string
-	number        Matcher
-	identifier    Matcher
-	operator      Matcher
+	operators      []operator[V]
+	unary          map[string]func(a V) V
+	functions      map[string]function[V]
+	constants      map[string]V
+	constantsLocal map[string]V
+	numToValue     func(s string) (V, error)
+	strToValue     func(s string) (V, error)
+	arrayHandler   Array[V]
+	lambdaHandler  Lambda[V]
+	mapHandler     Map[V]
+	textOperators  map[string]string
+	number         Matcher
+	identifier     Matcher
+	operator       Matcher
 }
 
 // Variables is the interface which allows the evaluator to access variables
@@ -263,6 +265,11 @@ func (p *Parser[V]) MapHandler(m Map[V]) *Parser[V] {
 
 // Parse parses the given string and returns a Function
 func (p *Parser[V]) Parse(str string) (f Function[V], isConst bool, err error) {
+	return p.ParseConst(str, nil)
+}
+
+// Parse parses the given string with additional constants and returns a Function
+func (p *Parser[V]) ParseConst(str string, constants map[string]V) (f Function[V], isConst bool, err error) {
 	defer func() {
 		rec := recover()
 		if rec != nil {
@@ -278,6 +285,7 @@ func (p *Parser[V]) Parse(str string) (f Function[V], isConst bool, err error) {
 		NewTokenizer(str, p.number, p.identifier, p.operator).
 			SetTextOperators(p.textOperators)
 
+	p.constantsLocal = constants
 	e := p.parse(tokenizer, 0)
 	t := tokenizer.Next()
 	if t.typ != tEof {
@@ -381,32 +389,31 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 			} else {
 				//Method call
 				tokenizer.Next()
-				args, _ := p.parseArgs(tokenizer, tClose)
-				expression = ExpressionFunc[V](func(context Variables[V]) V {
-					value := inner.Eval(context)
-
+				args, argsConst := p.parseArgs(tokenizer, tClose)
+				if ic, isConst := inner.(ConstExpression[V]); isConst && argsConst {
 					a := make([]reflect.Value, len(args)+1)
-					a[0] = reflect.ValueOf(value)
+					a[0] = reflect.ValueOf(ic.constVal)
 					for i, e := range args {
-						a[i+1] = reflect.ValueOf(e.Eval(context))
-					}
-
-					typeOf := reflect.TypeOf(value)
-					if m, ok := typeOf.MethodByName(name); ok {
-						res := m.Func.Call(a)
-						if len(res) == 1 {
-							if v, ok := res[0].Interface().(V); ok {
-								return v
-							} else {
-								panic(fmt.Errorf("result of method %v is not a value. It is: %v", name, res[0]))
-							}
+						if ce, ok := e.(ConstExpression[V]); ok {
+							a[i+1] = reflect.ValueOf(ce.constVal)
 						} else {
-							panic(fmt.Errorf("method %v does not return a single value: %v", name, len(res)))
+							panic("arg not const")
 						}
-					} else {
-						panic(fmt.Errorf("method %v not found", name))
 					}
-				})
+					expression = ConstExpression[V]{callFunc(ic.constVal, name, a)}
+				} else {
+					expression = ExpressionFunc[V](func(context Variables[V]) V {
+						value := inner.Eval(context)
+
+						a := make([]reflect.Value, len(args)+1)
+						a[0] = reflect.ValueOf(value)
+						for i, e := range args {
+							a[i+1] = reflect.ValueOf(e.Eval(context))
+						}
+
+						return callFunc(value, name, a)
+					})
+				}
 			}
 		case tOpenBracket:
 			if p.arrayHandler == nil {
@@ -443,6 +450,33 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 	}
 }
 
+func callFunc[V any](value V, name string, args []reflect.Value) V {
+	name = firstRuneUpper(name)
+	typeOf := reflect.TypeOf(value)
+	if m, ok := typeOf.MethodByName(name); ok {
+		res := m.Func.Call(args)
+		if len(res) == 1 {
+			if v, ok := res[0].Interface().(V); ok {
+				return v
+			} else {
+				panic(fmt.Errorf("result of method %v is not a value. It is: %v", name, res[0]))
+			}
+		} else {
+			panic(fmt.Errorf("method %v does not return a single value: %v", name, len(res)))
+		}
+	} else {
+		panic(fmt.Errorf("method %v not found", name))
+	}
+}
+
+func firstRuneUpper(name string) string {
+	r, l := utf8.DecodeRune([]byte(name))
+	if unicode.IsUpper(r) {
+		return name
+	}
+	return string(unicode.ToUpper(r)) + name[l:]
+}
+
 func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 	t := tokenizer.Next()
 	switch t.typ {
@@ -450,9 +484,13 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 		name := t.image
 		if tokenizer.Peek().typ != tOpen {
 			// check if 'name' is a constant
-			val, ok := p.constants[name]
-			if ok {
+			if val, ok := p.constants[name]; ok {
 				return ConstExpression[V]{val}
+			}
+			if p.constantsLocal != nil {
+				if val, ok := p.constantsLocal[name]; ok {
+					return ConstExpression[V]{val}
+				}
 			}
 
 			// not a constant, needs to be requested at evaluation time

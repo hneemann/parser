@@ -111,3 +111,20 @@ func Test_Invalid(t *testing.T) {
 	_, _, err = p.Parse("5#5")
 	assert.Error(t, err)
 }
+
+func Test_firstRuneUpper(t *testing.T) {
+	tests := []struct {
+		name string
+		str  string
+		want string
+	}{
+		{name: "1", str: "a", want: "A"},
+		{name: "2", str: "A", want: "A"},
+		{name: "3", str: "ab", want: "Ab"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, firstRuneUpper(tt.str), "firstRuneUpper(%v)", tt.str)
+		})
+	}
+}

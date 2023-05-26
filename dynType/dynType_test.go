@@ -1,6 +1,7 @@
 package dynType
 
 import (
+	"fmt"
 	"github.com/hneemann/parser"
 	"github.com/stretchr/testify/assert"
 	"math"
@@ -157,7 +158,7 @@ func Test_Invalid(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func Test_stream(t *testing.T) {
+func Test_streamConst(t *testing.T) {
 	tests := []struct {
 		name string
 		exp  string
@@ -171,9 +172,37 @@ func Test_stream(t *testing.T) {
 	p := New()
 	for _, test := range tests {
 		v, isConst, err := p.Parse(test.exp)
-		assert.False(t, isConst, test.name)
+		assert.True(t, isConst, test.name)
 		assert.NoError(t, err, test.name)
 		r, err := v(nil)
+		assert.NoError(t, err, test.name)
+		assert.EqualValues(t, test.res, r, test.name)
+	}
+}
+
+func Test_stream(t *testing.T) {
+	tests := []struct {
+		name string
+		exp  string
+		res  Value
+	}{
+		{name: "first", exp: "list.Filter(->a>1).First().b", res: vFloat(4)},
+		{name: "sum", exp: "list.Filter(->a>1).Map(->a*b).Sum()", res: vFloat(99)},
+		{name: "reduce", exp: "list.Filter(->a>1).Map(->a*b).Reduce(->value+this)", res: vFloat(99)},
+	}
+
+	var list vList
+	for i := 1; i <= 4; i++ {
+		list = append(list, vMap{"a": vFloat(i), "b": vFloat(i * i)})
+	}
+	fmt.Println(list)
+	c := parser.VarMap[Value]{"list": list}
+	p := New()
+	for _, test := range tests {
+		v, isConst, err := p.Parse(test.exp)
+		assert.False(t, isConst, test.name)
+		assert.NoError(t, err, test.name)
+		r, err := v(c)
 		assert.NoError(t, err, test.name)
 		assert.EqualValues(t, test.res, r, test.name)
 	}

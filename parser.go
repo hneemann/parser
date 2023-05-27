@@ -113,12 +113,18 @@ type Map[V any] interface {
 
 type Expression[V any] interface {
 	Eval(context Variables[V]) V
+	// isConstant returns true if this expression does not depend on the context
+	isConstant() bool
 }
 
 type ExpressionFunc[V any] func(context Variables[V]) V
 
 func (e ExpressionFunc[V]) Eval(context Variables[V]) V {
 	return e(context)
+}
+
+func (e ExpressionFunc[V]) isConstant() bool {
+	return false
 }
 
 type ConstExpression[V any] struct {
@@ -129,19 +135,41 @@ func (e ConstExpression[V]) Eval(context Variables[V]) V {
 	return e.constVal
 }
 
+func (e ConstExpression[V]) isConstant() bool {
+	return true
+}
+
 // Function is the return type of the parser
 type Function[V any] func(context Variables[V]) (V, error)
 
 // Lambda is used to store a lambda function
 type Lambda[V any] struct {
-	exp  Expression[V]
-	name string
+	exp     Expression[V]
+	name    string
+	context Variables[V]
+}
+
+type lambdaContext[V any] struct {
+	l Lambda[V]
+	v V
+}
+
+func (l lambdaContext[V]) Get(name string) (V, bool) {
+	if name == l.l.name {
+		return l.v, true
+	}
+	return l.l.context.Get(name)
 }
 
 // Eval evaluates the lambda expression
 func (l Lambda[V]) Eval(value V) V {
-	c := VarMap[V]{l.name: value}
-	return l.exp.Eval(c)
+	if l.context == nil {
+		c := VarMap[V]{l.name: value}
+		return l.exp.Eval(c)
+	} else {
+		c := lambdaContext[V]{l, value}
+		return l.exp.Eval(c)
+	}
 }
 
 // New creates a new Parser
@@ -304,8 +332,8 @@ func (p *Parser[V]) ParseConst(str string, constants map[string]V) (f Function[V
 		return nil, false, errors.New(unexpected("EOF", t))
 	}
 
-	if ec, isConst := e.(ConstExpression[V]); isConst {
-		c := ec.Eval(nil)
+	if e.isConstant() {
+		c := e.Eval(nil)
 		return func(context Variables[V]) (v V, ierr error) {
 			return c, nil
 		}, true, nil
@@ -339,10 +367,8 @@ func (p *Parser[V]) parse(tokenizer *Tokenizer, op int) Expression[V] {
 			aa := a
 			bb := next(tokenizer)
 
-			ac, aConst := aa.(ConstExpression[V])
-			bc, bConst := bb.(ConstExpression[V])
-			if aConst && bConst {
-				r := operator.operate(ac, bc, nil)
+			if aa.isConstant() && bb.isConstant() {
+				r := operator.operate(aa, bb, nil)
 				a = ConstExpression[V]{constVal: r}
 			} else {
 				a = ExpressionFunc[V](func(context Variables[V]) V {
@@ -382,8 +408,8 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 				if p.mapHandler == nil {
 					panic("unknown token type: " + tokenizer.Next().image)
 				}
-				if ic, isConst := inner.(ConstExpression[V]); isConst {
-					v, err := p.mapHandler.GetElement(name, ic.constVal)
+				if inner.isConstant() {
+					v, err := p.mapHandler.GetElement(name, inner.Eval(nil))
 					if err != nil {
 						panic(fmt.Errorf("index error: %w", err))
 					}
@@ -402,17 +428,17 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 				//Method call
 				tokenizer.Next()
 				args, argsConst := p.parseArgs(tokenizer, tClose)
-				if ic, isConst := inner.(ConstExpression[V]); isConst && argsConst {
+				if inner.isConstant() && argsConst {
 					a := make([]reflect.Value, len(args)+1)
-					a[0] = reflect.ValueOf(ic.constVal)
+					a[0] = reflect.ValueOf(inner.Eval(nil))
 					for i, e := range args {
-						if ce, ok := e.(ConstExpression[V]); ok {
-							a[i+1] = reflect.ValueOf(ce.constVal)
+						if e.isConstant() {
+							a[i+1] = reflect.ValueOf(e.Eval(nil))
 						} else {
 							panic("arg not const")
 						}
 					}
-					expression = ConstExpression[V]{callFunc(ic.constVal, name, a)}
+					expression = ConstExpression[V]{callFunc(inner.Eval(nil), name, a)}
 				} else {
 					expression = ExpressionFunc[V](func(context Variables[V]) V {
 						value := inner.Eval(context)
@@ -437,10 +463,8 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 			if t.typ != tCloseBracket {
 				panic(unexpected("}", t))
 			}
-			ie, ic := indexExpr.(ConstExpression[V])
-			le, lc := inner.(ConstExpression[V])
-			if ic && lc {
-				r, err := p.arrayHandler.GetElement(ie.constVal, le.constVal)
+			if indexExpr.isConstant() && inner.isConstant() {
+				r, err := p.arrayHandler.GetElement(indexExpr.Eval(nil), inner.Eval(nil))
 				if err != nil {
 					panic(fmt.Errorf("index error: %w", err))
 				}
@@ -585,20 +609,31 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 		})
 	case tOperate:
 		if p.lambdaCreator != nil && t.image == "->" {
+			// lambda
 			t := tokenizer.Next()
 			if t.typ != tIdent {
 				panic("lambda ident is missing!")
 			}
 			e := p.parse(tokenizer, 0)
-			return ConstExpression[V]{p.lambdaCreator.Create(Lambda[V]{e, t.image})}
+			return ConstExpression[V]{p.lambdaCreator.Create(Lambda[V]{e, t.image, nil})}
+		} else if p.lambdaCreator != nil && t.image == "-->" {
+			// closure
+			t := tokenizer.Next()
+			if t.typ != tIdent {
+				panic("lambda ident is missing!")
+			}
+			e := p.parse(tokenizer, 0)
+			return ExpressionFunc[V](func(context Variables[V]) V {
+				return p.lambdaCreator.Create(Lambda[V]{e, t.image, context})
+			})
 		} else {
 			u := p.unary[t.image]
 			if u == nil {
 				panic("unary operator '" + t.image + "' not found!")
 			}
 			e := p.parseLiteral(tokenizer)
-			if ec, isConst := e.(ConstExpression[V]); isConst {
-				return ConstExpression[V]{u(ec.constVal)}
+			if e.isConstant() {
+				return ConstExpression[V]{u(e.Eval(nil))}
 			} else {
 				return ExpressionFunc[V](func(context Variables[V]) V {
 					return u(e.Eval(context))
@@ -644,7 +679,7 @@ func (p *Parser[V]) parseArgs(tokenizer *Tokenizer, closeList TokenType) ([]Expr
 	allConst := true
 	for {
 		element := p.parse(tokenizer, 0)
-		if _, ok := element.(ConstExpression[V]); !ok {
+		if !element.isConstant() {
 			allConst = false
 		}
 		args = append(args, element)
@@ -670,7 +705,7 @@ func (p Parser[V]) parseMap(tokenizer *Tokenizer) (map[string]Expression[V], boo
 				panic(unexpected(":", c))
 			}
 			entry := p.parse(tokenizer, 0)
-			if _, isConst := entry.(ConstExpression[V]); !isConst {
+			if !entry.isConstant() {
 				allEntriesConst = false
 			}
 			m[t.image] = entry

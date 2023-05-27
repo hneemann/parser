@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/hneemann/parser"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -85,6 +86,10 @@ func (v vLambda) String() string {
 	return ""
 }
 
+func (v vLambda) Eval(val Value) Value {
+	return v.lambda.Eval(val)
+}
+
 type vList []Value
 
 func (v vList) Bool() bool {
@@ -145,6 +150,49 @@ func (v vList) Sum() Value {
 
 func (v vList) First() Value {
 	return v[0]
+}
+
+func (v vList) Unique() vList {
+	m := map[Value]struct{}{}
+	for i := range v {
+		e := v[i]
+		m[e] = struct{}{}
+	}
+	var l vList
+	for e := range m {
+		l = append(l, e)
+	}
+	return l
+}
+
+type listOrder struct {
+	list   vList
+	lambda vLambda
+}
+
+func (l listOrder) Len() int {
+	return len(l.list)
+}
+
+func (l listOrder) Less(i, j int) bool {
+	vi := l.lambda.Eval(l.list[i])
+	vj := l.lambda.Eval(l.list[j])
+	si, oki := vi.(vString)
+	sj, okj := vj.(vString)
+	if oki && okj {
+		return si < sj
+	}
+	return vi.Float() < vj.Float()
+}
+
+func (l listOrder) Swap(i, j int) {
+	l.list[i], l.list[j] = l.list[j], l.list[i]
+}
+
+func (v vList) Order(lambda vLambda) vList {
+	lo := listOrder{list: v, lambda: lambda}
+	sort.Sort(lo)
+	return lo.list
 }
 
 type vMap map[string]Value

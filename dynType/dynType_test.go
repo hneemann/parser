@@ -5,6 +5,7 @@ import (
 	"github.com/hneemann/parser"
 	"github.com/stretchr/testify/assert"
 	"math"
+	"strconv"
 	"testing"
 )
 
@@ -207,4 +208,24 @@ func Test_stream(t *testing.T) {
 		assert.NoError(t, err, test.name)
 		assert.EqualValues(t, test.res, r, test.name)
 	}
+}
+
+func Test_closure(t *testing.T) {
+	exp := "list.map(->e e.a).unique().order(->e e).map(-->name [name,list.filter(-->e e.a=name).map(->e e.b).sum()])"
+
+	var list vList
+	var result vList
+	for i := 1; i <= 4; i++ {
+		list = append(list, vMap{"a": vString("num" + strconv.Itoa(i)), "b": vFloat(i * i)})
+		list = append(list, vMap{"a": vString("num" + strconv.Itoa(i)), "b": vFloat(i*i + 1)})
+		result = append(result, vList{vString("num" + strconv.Itoa(i)), vFloat(2*i*i + 1)})
+	}
+	p := New()
+
+	v, isConst, err := p.ParseConst(exp, map[string]Value{"list": list})
+	assert.False(t, isConst)
+	assert.NoError(t, err)
+	r, err := v(nil)
+	assert.NoError(t, err)
+	assert.EqualValues(t, result, r)
 }

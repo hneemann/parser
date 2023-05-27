@@ -411,7 +411,7 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 				if inner.isConstant() {
 					v, err := p.mapHandler.GetElement(name, inner.Eval(nil))
 					if err != nil {
-						panic(fmt.Errorf("index error: %w", err))
+						panic(fmt.Errorf("map error: %w", err))
 					}
 					expression = ConstExpression[V]{v}
 				} else {
@@ -419,7 +419,7 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 						mapValue := inner.Eval(context)
 						v, err := p.mapHandler.GetElement(name, mapValue)
 						if err != nil {
-							panic(fmt.Errorf("index error: %w", err))
+							panic(fmt.Errorf("map error: %w", err))
 						}
 						return v
 					})

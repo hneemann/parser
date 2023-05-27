@@ -164,16 +164,17 @@ func Test_streamConst(t *testing.T) {
 		exp  string
 		res  Value
 	}{
-		{name: "first", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->a>1).First().b", res: vFloat(4)},
-		{name: "sum", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->a>1).Map(->a*b).Sum()", res: vFloat(99)},
-		{name: "reduce", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->a>1).Map(->a*b).Reduce(->value+this)", res: vFloat(99)},
+		{name: "first", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->e e.a>1).First().b", res: vFloat(4)},
+		{name: "sum", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->e e.a>1).Map(->e e.a*e.b).Sum()", res: vFloat(99)},
+		{name: "reduce", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->e e.a>1).Map(->e e.a*e.b).Reduce(->e e.sum+e.value)", res: vFloat(99)},
+		{name: "max", exp: "[{a:1,b:1},{a:2,b:4},{a:4,b:16},{a:3,b:9}].Map(->e e.b).Reduce(->e ite(e.sum>e.value,e.sum,e.value))", res: vFloat(16)},
 	}
 
 	p := New()
 	for _, test := range tests {
 		v, isConst, err := p.Parse(test.exp)
-		assert.True(t, isConst, test.name)
 		assert.NoError(t, err, test.name)
+		assert.True(t, isConst, test.name)
 		r, err := v(nil)
 		assert.NoError(t, err, test.name)
 		assert.EqualValues(t, test.res, r, test.name)
@@ -186,9 +187,9 @@ func Test_stream(t *testing.T) {
 		exp  string
 		res  Value
 	}{
-		{name: "first", exp: "list.Filter(->a>1).First().b", res: vFloat(4)},
-		{name: "sum", exp: "list.Filter(->a>1).Map(->a*b).Sum()", res: vFloat(99)},
-		{name: "reduce", exp: "list.Filter(->a>1).Map(->a*b).Reduce(->value+this)", res: vFloat(99)},
+		{name: "first", exp: "list.Filter(->e e.a>1).First().b", res: vFloat(4)},
+		{name: "sum", exp: "list.Filter(->e e.a>1).Map(->e e.a*e.b).Sum()", res: vFloat(99)},
+		{name: "reduce", exp: "list.Filter(->e e.a>1).Map(->e e.a*e.b).Reduce(->e e.sum+e.value)", res: vFloat(99)},
 	}
 
 	var list vList

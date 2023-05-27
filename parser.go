@@ -67,7 +67,7 @@ type Parser[V any] struct {
 	numToValue     func(s string) (V, error)
 	strToValue     func(s string) (V, error)
 	arrayHandler   Array[V]
-	lambdaHandler  Lambda[V]
+	lambdaCreator  LambdaCreator[V]
 	mapHandler     Map[V]
 	textOperators  map[string]string
 	number         Matcher
@@ -97,10 +97,10 @@ type Array[V any] interface {
 	GetElement(index V, list V) (V, error)
 }
 
-// Lambda allows creating Lambdas
-type Lambda[V any] interface {
+// LambdaCreator allows creating Lambdas
+type LambdaCreator[V any] interface {
 	// Create creates a Lambda
-	Create(e Expression[V]) V
+	Create(l Lambda[V]) V
 }
 
 // Map allows creating and to access maps
@@ -131,6 +131,18 @@ func (e ConstExpression[V]) Eval(context Variables[V]) V {
 
 // Function is the return type of the parser
 type Function[V any] func(context Variables[V]) (V, error)
+
+// Lambda is used to store a lambda function
+type Lambda[V any] struct {
+	exp  Expression[V]
+	name string
+}
+
+// Eval evaluates the lambda expression
+func (l Lambda[V]) Eval(value V) V {
+	c := VarMap[V]{l.name: value}
+	return l.exp.Eval(c)
+}
 
 // New creates a new Parser
 func New[V any]() *Parser[V] {
@@ -252,8 +264,8 @@ func (p *Parser[V]) ArrayHandler(h Array[V]) *Parser[V] {
 }
 
 // LambdaHandler is used to set a converter that creates lambdas from an expression
-func (p *Parser[V]) LambdaHandler(h Lambda[V]) *Parser[V] {
-	p.lambdaHandler = h
+func (p *Parser[V]) LambdaCreator(h LambdaCreator[V]) *Parser[V] {
+	p.lambdaCreator = h
 	return p
 }
 
@@ -268,7 +280,7 @@ func (p *Parser[V]) Parse(str string) (f Function[V], isConst bool, err error) {
 	return p.ParseConst(str, nil)
 }
 
-// Parse parses the given string with additional constants and returns a Function
+// ParseConst parses the given string with additional constants and returns a Function
 func (p *Parser[V]) ParseConst(str string, constants map[string]V) (f Function[V], isConst bool, err error) {
 	defer func() {
 		rec := recover()
@@ -572,9 +584,13 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 			return p.arrayHandler.Create(a)
 		})
 	case tOperate:
-		if p.lambdaHandler != nil && t.image == "->" {
+		if p.lambdaCreator != nil && t.image == "->" {
+			t := tokenizer.Next()
+			if t.typ != tIdent {
+				panic("lambda ident is missing!")
+			}
 			e := p.parse(tokenizer, 0)
-			return ConstExpression[V]{p.lambdaHandler.Create(e)}
+			return ConstExpression[V]{p.lambdaCreator.Create(Lambda[V]{e, t.image})}
 		} else {
 			u := p.unary[t.image]
 			if u == nil {

@@ -70,7 +70,7 @@ func (v vBool) Float() float64 {
 }
 
 type vLambda struct {
-	e parser.Expression[Value]
+	lambda parser.Lambda[Value]
 }
 
 func (v vLambda) Bool() bool {
@@ -105,18 +105,10 @@ func (v vList) String() string {
 	return b.String()
 }
 
-func createVars(e Value) parser.Variables[Value] {
-	if myMap, ok := e.(parser.Variables[Value]); ok {
-		return myMap
-	} else {
-		return vMap{"this": e}
-	}
-}
-
 func (v vList) Filter(lambda vLambda) vList {
 	var res vList
 	for _, entry := range v {
-		if lambda.e.Eval(createVars(entry)).Bool() {
+		if lambda.lambda.Eval(entry).Bool() {
 			res = append(res, entry)
 		}
 	}
@@ -126,7 +118,7 @@ func (v vList) Filter(lambda vLambda) vList {
 func (v vList) Map(lambda vLambda) vList {
 	var res vList
 	for _, entry := range v {
-		res = append(res, lambda.e.Eval(createVars(entry)))
+		res = append(res, lambda.lambda.Eval(entry))
 	}
 	return res
 }
@@ -137,7 +129,7 @@ func (v vList) Reduce(lambda vLambda) Value {
 		if i == 0 {
 			res = entry
 		} else {
-			res = lambda.e.Eval(vMap{"value": res, "this": entry})
+			res = lambda.lambda.Eval(vMap{"sum": res, "value": entry})
 		}
 	}
 	return res
@@ -367,10 +359,10 @@ func (c arrayHandler) GetElement(i Value, list Value) (Value, error) {
 	}
 }
 
-type lambdaHandler struct {
+type lambdaCreator struct {
 }
 
-func (c lambdaHandler) Create(e parser.Expression[Value]) Value {
+func (c lambdaCreator) Create(e parser.Lambda[Value]) Value {
 	return vLambda{e}
 }
 
@@ -405,10 +397,17 @@ func New() *parser.Parser[Value] {
 		PureFunc("float", func(a ...Value) Value { return vFloat(a[0].Float()) }, 1, 1).
 		PureFunc("bool", func(a ...Value) Value { return vBool(a[0].Bool()) }, 1, 1).
 		PureFunc("string", func(a ...Value) Value { return vString(a[0].String()) }, 1, 1).
+		PureFunc("ite", func(a ...Value) Value {
+			if a[0].Bool() {
+				return a[1]
+			} else {
+				return a[2]
+			}
+		}, 3, 3).
 		ValFromNum(parseNum).
 		ValFromStr(parseStr).
 		ArrayHandler(arrayHandler{}).
-		LambdaHandler(lambdaHandler{}).
+		LambdaCreator(lambdaCreator{}).
 		MapHandler(mapHandler{}).
 		Const("true", vBool(true)).
 		Const("false", vBool(false)).

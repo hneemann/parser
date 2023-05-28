@@ -143,33 +143,41 @@ func (e ConstExpression[V]) isConstant() bool {
 type Function[V any] func(context Variables[V]) (V, error)
 
 // Lambda is used to store a lambda function
-type Lambda[V any] struct {
-	exp     Expression[V]
-	name    string
+type Lambda[V any] interface {
+	// Eval evaluates the lambda expression
+	Eval(value V) V
+}
+
+type simpleLambda[V any] struct {
+	exp  Expression[V]
+	name string
+}
+
+func (l simpleLambda[V]) Eval(value V) V {
+	c := VarMap[V]{l.name: value}
+	return l.exp.Eval(c)
+}
+
+type addVarContext[V any] struct {
+	name   string
+	value  V
+	parent Variables[V]
+}
+
+func (avc addVarContext[V]) Get(name string) (V, bool) {
+	if name == avc.name {
+		return avc.value, true
+	}
+	return avc.parent.Get(name)
+}
+
+type closure[V any] struct {
+	simpleLambda[V]
 	context Variables[V]
 }
 
-type lambdaContext[V any] struct {
-	l Lambda[V]
-	v V
-}
-
-func (l lambdaContext[V]) Get(name string) (V, bool) {
-	if name == l.l.name {
-		return l.v, true
-	}
-	return l.l.context.Get(name)
-}
-
-// Eval evaluates the lambda expression
-func (l Lambda[V]) Eval(value V) V {
-	if l.context == nil {
-		c := VarMap[V]{l.name: value}
-		return l.exp.Eval(c)
-	} else {
-		c := lambdaContext[V]{l, value}
-		return l.exp.Eval(c)
-	}
+func (c closure[V]) Eval(value V) V {
+	return c.exp.Eval(addVarContext[V]{c.name, value, c.context})
 }
 
 // New creates a new Parser
@@ -615,7 +623,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 				panic("lambda ident is missing!")
 			}
 			e := p.parse(tokenizer, 0)
-			return ConstExpression[V]{p.lambdaCreator.Create(Lambda[V]{e, t.image, nil})}
+			return ConstExpression[V]{p.lambdaCreator.Create(simpleLambda[V]{e, t.image})}
 		} else if p.lambdaCreator != nil && t.image == "-->" {
 			// closure
 			t := tokenizer.Next()
@@ -624,7 +632,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 			}
 			e := p.parse(tokenizer, 0)
 			return ExpressionFunc[V](func(context Variables[V]) V {
-				return p.lambdaCreator.Create(Lambda[V]{e, t.image, context})
+				return p.lambdaCreator.Create(closure[V]{simpleLambda[V]{e, t.image}, context})
 			})
 		} else {
 			u := p.unary[t.image]

@@ -1,7 +1,6 @@
 package dynType
 
 import (
-	"fmt"
 	"github.com/hneemann/parser"
 	"github.com/stretchr/testify/assert"
 	"math"
@@ -197,7 +196,6 @@ func Test_stream(t *testing.T) {
 	for i := 1; i <= 4; i++ {
 		list = append(list, vMap{"a": vFloat(i), "b": vFloat(i * i)})
 	}
-	fmt.Println(list)
 	c := parser.VarMap[Value]{"list": list}
 	p := New()
 	for _, test := range tests {

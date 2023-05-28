@@ -410,8 +410,15 @@ func (c arrayHandler) GetElement(i Value, list Value) (Value, error) {
 type lambdaCreator struct {
 }
 
-func (c lambdaCreator) Create(e parser.Lambda[Value]) Value {
-	return vLambda{e}
+func (c lambdaCreator) Create(l parser.Lambda[Value]) Value {
+	return vLambda{l}
+}
+
+func (c lambdaCreator) IsLambda(value Value) (parser.Lambda[Value], bool) {
+	if l, ok := value.(vLambda); ok {
+		return l.lambda, true
+	}
+	return nil, false
 }
 
 type mapHandler struct {

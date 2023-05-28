@@ -100,7 +100,10 @@ type Array[V any] interface {
 // LambdaCreator allows creating Lambdas
 type LambdaCreator[V any] interface {
 	// Create creates a Lambda
-	Create(l Lambda[V]) V
+	Create(Lambda[V]) V
+
+	// IsLambda checks, if argument is a lambda expression
+	IsLambda(V) (Lambda[V], bool)
 }
 
 // Map allows creating and to access maps
@@ -145,7 +148,7 @@ type Function[V any] func(context Variables[V]) (V, error)
 // Lambda is used to store a lambda function
 type Lambda[V any] interface {
 	// Eval evaluates the lambda expression
-	Eval(value V) V
+	Eval(V) V
 }
 
 type simpleLambda[V any] struct {
@@ -374,11 +377,11 @@ func (p *Parser[V]) parseExpression(tokenizer *Tokenizer) Expression[V] {
 		}
 		name := t.image
 		if t := tokenizer.Next(); t.typ != tOperate || t.image != "=" {
-			unexpected("=", t)
+			panic(unexpected("=", t))
 		}
 		exp := p.parse(tokenizer, 0)
 		if t := tokenizer.Next(); t.typ != tSemicolon || t.image != ";" {
-			unexpected(";", t)
+			panic(unexpected(";", t))
 		}
 		inner := p.parseExpression(tokenizer)
 		return ExpressionFunc[V](func(context Variables[V]) V {
@@ -477,6 +480,15 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 				} else {
 					expression = ExpressionFunc[V](func(context Variables[V]) V {
 						value := inner.Eval(context)
+
+						if p.lambdaCreator != nil && len(args) == 1 {
+							v, err := p.mapHandler.GetElement(name, value)
+							if err == nil {
+								if l, ok := p.lambdaCreator.IsLambda(v); ok {
+									return l.Eval(args[0].Eval(context))
+								}
+							}
+						}
 
 						a := make([]reflect.Value, len(args)+1)
 						a[0] = reflect.ValueOf(value)
@@ -601,6 +613,17 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 					})
 				}
 			} else {
+				if p.lambdaCreator != nil && len(args) == 1 {
+					return ExpressionFunc[V](func(context Variables[V]) V {
+						if v, ok := context.Get(name); ok {
+							if l, ok := p.lambdaCreator.IsLambda(v); ok {
+								arg := args[0].Eval(context)
+								return l.Eval(arg)
+							}
+						}
+						panic("lambda '" + name + "' not found")
+					})
+				}
 				panic("function '" + name + "' not found")
 			}
 		}

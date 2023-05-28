@@ -128,3 +128,24 @@ func Test_firstRuneUpper(t *testing.T) {
 		})
 	}
 }
+
+func Test_Let(t *testing.T) {
+	tests := []struct {
+		name string
+		exp  string
+		want float64
+	}{
+		{name: "1", exp: "let a=5;a*a", want: 25},
+		{name: "2", exp: "let a=5;let b=6;a*b", want: 30},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewFloat()
+			e, _, err := p.Parse(tt.exp)
+			assert.NoError(t, err)
+			res, err := e(nil)
+			assert.NoError(t, err)
+			assert.EqualValues(t, tt.want, res)
+		})
+	}
+}

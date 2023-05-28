@@ -334,7 +334,7 @@ func (p *Parser[V]) ParseConst(str string, constants map[string]V) (f Function[V
 			SetTextOperators(p.textOperators)
 
 	p.constantsLocal = constants
-	e := p.parse(tokenizer, 0)
+	e := p.parseExpression(tokenizer)
 	t := tokenizer.Next()
 	if t.typ != tEof {
 		return nil, false, errors.New(unexpected("EOF", t))
@@ -363,6 +363,33 @@ func (p *Parser[V]) ParseConst(str string, constants map[string]V) (f Function[V
 }
 
 type parserFunc[V any] func(tokenizer *Tokenizer) Expression[V]
+
+func (p *Parser[V]) parseExpression(tokenizer *Tokenizer) Expression[V] {
+	t := tokenizer.Peek()
+	if t.typ == tIdent && t.image == "let" {
+		tokenizer.Next()
+		t = tokenizer.Next()
+		if t.typ != tIdent {
+			panic("no identifier followed by let")
+		}
+		name := t.image
+		if t := tokenizer.Next(); t.typ != tOperate || t.image != "=" {
+			unexpected("=", t)
+		}
+		exp := p.parse(tokenizer, 0)
+		if t := tokenizer.Next(); t.typ != tSemicolon || t.image != ";" {
+			unexpected(";", t)
+		}
+		inner := p.parseExpression(tokenizer)
+		return ExpressionFunc[V](func(context Variables[V]) V {
+			val := exp.Eval(context)
+			innerContext := addVarContext[V]{name: name, value: val, parent: context}
+			return inner.Eval(innerContext)
+		})
+	} else {
+		return p.parse(tokenizer, 0)
+	}
+}
 
 func (p *Parser[V]) parse(tokenizer *Tokenizer, op int) Expression[V] {
 	next := p.nextParserCall(op)
@@ -466,7 +493,7 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 				panic("unknown token type: " + tokenizer.Next().image)
 			}
 			tokenizer.Next()
-			indexExpr := p.parse(tokenizer, 0)
+			indexExpr := p.parseExpression(tokenizer)
 			t := tokenizer.Next()
 			if t.typ != tCloseBracket {
 				panic(unexpected("}", t))
@@ -622,7 +649,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 			if t.typ != tIdent {
 				panic("lambda ident is missing!")
 			}
-			e := p.parse(tokenizer, 0)
+			e := p.parseExpression(tokenizer)
 			return ConstExpression[V]{p.lambdaCreator.Create(simpleLambda[V]{e, t.image})}
 		} else if p.lambdaCreator != nil && t.image == "-->" {
 			// closure
@@ -630,7 +657,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 			if t.typ != tIdent {
 				panic("lambda ident is missing!")
 			}
-			e := p.parse(tokenizer, 0)
+			e := p.parseExpression(tokenizer)
 			return ExpressionFunc[V](func(context Variables[V]) V {
 				return p.lambdaCreator.Create(closure[V]{simpleLambda[V]{e, t.image}, context})
 			})
@@ -667,7 +694,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 		}
 		return ConstExpression[V]{v}
 	case tOpen:
-		e := p.parse(tokenizer, 0)
+		e := p.parseExpression(tokenizer)
 		t := tokenizer.Next()
 		if t.typ != tClose {
 			panic(unexpected(")", t))
@@ -686,7 +713,7 @@ func (p *Parser[V]) parseArgs(tokenizer *Tokenizer, closeList TokenType) ([]Expr
 	}
 	allConst := true
 	for {
-		element := p.parse(tokenizer, 0)
+		element := p.parseExpression(tokenizer)
 		if !element.isConstant() {
 			allConst = false
 		}
@@ -712,7 +739,7 @@ func (p Parser[V]) parseMap(tokenizer *Tokenizer) (map[string]Expression[V], boo
 			if c := tokenizer.Next(); c.typ != tColon {
 				panic(unexpected(":", c))
 			}
-			entry := p.parse(tokenizer, 0)
+			entry := p.parseExpression(tokenizer)
 			if !entry.isConstant() {
 				allEntriesConst = false
 			}

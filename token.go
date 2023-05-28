@@ -19,6 +19,7 @@ const (
 	tDot
 	tComma
 	tColon
+	tSemicolon
 	tNumber
 	tString
 	tOperate
@@ -124,6 +125,8 @@ func (t *Tokenizer) run(tokens chan<- Token) {
 			tokens <- Token{tColon, ":"}
 		case ',':
 			tokens <- Token{tComma, ","}
+		case ';':
+			tokens <- Token{tSemicolon, ";"}
 		case '"':
 			image := t.read(func(c rune) bool { return c != '"' })
 			t.next()

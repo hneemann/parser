@@ -452,6 +452,14 @@ func New() *parser.Parser[Value] {
 		PureFunc("float", func(a ...Value) Value { return vFloat(a[0].Float()) }, 1, 1).
 		PureFunc("bool", func(a ...Value) Value { return vBool(a[0].Bool()) }, 1, 1).
 		PureFunc("string", func(a ...Value) Value { return vString(a[0].String()) }, 1, 1).
+		PureFunc("list", func(a ...Value) Value {
+			n := int(a[0].Float())
+			l := make(vList, n, n)
+			for i := 0; i < n; i++ {
+				l[i] = vFloat(i)
+			}
+			return l
+		}, 1, 1).
 		PureFunc("ite", func(a ...Value) Value {
 			if a[0].Bool() {
 				return a[1]

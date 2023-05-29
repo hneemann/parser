@@ -183,19 +183,23 @@ func Test_streamConst(t *testing.T) {
 
 func Test_Lambda(t *testing.T) {
 	tests := []struct {
-		name string
-		exp  string
-		res  Value
+		name    string
+		exp     string
+		res     Value
+		isConst bool
 	}{
-		{name: "simple", exp: "let sqr= ->x x*x;sqr(5)", res: vFloat(25)},
-		{name: "map", exp: "let map={a:->x x*x,b:5};map.a(map.b)", res: vFloat(25)},
+		{name: "neg", exp: "let m={a:2,b:3}; -(m.a)*2", res: vFloat(-4), isConst: false},
+		{name: "simple", exp: "let sqr= ->x x*x;sqr(5)", res: vFloat(25), isConst: false},
+		{name: "map", exp: "let map={a:->x x*x,b:5};map.a(map.b)", res: vFloat(25), isConst: false},
+		{name: "list", exp: "list(10).map(->i {a:i, b:i*i}).map(->e e.b).sum()", res: vFloat(285), isConst: true},
+		{name: "list2", exp: "list(10).map(->i i*i).sum()", res: vFloat(285), isConst: true},
 	}
 
 	p := New()
 	for _, test := range tests {
 		v, isConst, err := p.Parse(test.exp)
-		assert.False(t, isConst, test.name)
-		assert.NoError(t, err, test.name)
+		assert.EqualValues(t, isConst, test.isConst, test.name)
+		assert.NoError(t, err, test.name, test.name)
 		r, err := v(nil)
 		assert.NoError(t, err, test.name)
 		assert.EqualValues(t, test.res, r, test.name)

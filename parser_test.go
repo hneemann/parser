@@ -15,6 +15,7 @@ func Test_Calculate(t *testing.T) {
 	assert.EqualValues(t, 4, eval(t, mustConst(t, p, "10/5*2")))
 	assert.EqualValues(t, -2, eval(t, mustConst(t, p, "-2")))
 	assert.EqualValues(t, -2, eval(t, mustConst(t, p, "-(1+1)")))
+	assert.EqualValues(t, -2, eval(t, mustConst(t, p, "-(-1+3)")))
 
 	assert.EqualValues(t, 6, eval(t, mustConst(t, p, "2*(1+2)")))
 	assert.EqualValues(t, 6, eval(t, mustConst(t, p, "(1+2)*2")))

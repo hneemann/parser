@@ -158,28 +158,6 @@ func Test_Invalid(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func Test_streamConst(t *testing.T) {
-	tests := []struct {
-		name string
-		exp  string
-		res  Value
-	}{
-		{name: "first", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->e e.a>1).First().b", res: vFloat(4)},
-		{name: "sum", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->e e.a>1).Map(->e e.a*e.b).Sum()", res: vFloat(99)},
-		{name: "reduce", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->e e.a>1).Map(->e e.a*e.b).Reduce(->e e.sum+e.value)", res: vFloat(99)},
-		{name: "max", exp: "[{a:1,b:1},{a:2,b:4},{a:4,b:16},{a:3,b:9}].Map(->e e.b).Reduce(->e ite(e.sum>e.value,e.sum,e.value))", res: vFloat(16)},
-	}
-
-	p := New()
-	for _, test := range tests {
-		v, isConst, err := p.Parse(test.exp)
-		assert.NoError(t, err, test.name)
-		assert.True(t, isConst, test.name)
-		r, err := v(nil)
-		assert.NoError(t, err, test.name)
-		assert.EqualValues(t, test.res, r, test.name)
-	}
-}
 func Test_Neg(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -211,10 +189,14 @@ func Test_Lambda(t *testing.T) {
 		res     Value
 		isConst bool
 	}{
-		{name: "simple", exp: "let sqr= ->x x*x;sqr(5)", res: vFloat(25), isConst: false},
-		{name: "map", exp: "let map={a:->x x*x,b:5};map.a(map.b)", res: vFloat(25), isConst: false},
-		{name: "list", exp: "list(10).map(->i {a:i, b:i*i}).map(->e e.b).sum()", res: vFloat(285), isConst: true},
-		{name: "list2", exp: "list(10).map(->i i*i).sum()", res: vFloat(285), isConst: true},
+		{name: "first", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->e e.a>1).First().b", res: vFloat(4)},
+		{name: "sum", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->e e.a>1).Map(->e e.a*e.b).Sum()", res: vFloat(99)},
+		{name: "reduce", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(->e e.a>1).Map(->e e.a*e.b).Reduce(->e e.sum+e.value)", res: vFloat(99)},
+		{name: "max", exp: "[{a:1,b:1},{a:2,b:4},{a:4,b:16},{a:3,b:9}].Map(->e e.b).Reduce(->e ite(e.sum>e.value,e.sum,e.value))", res: vFloat(16)},
+		{name: "simple", exp: "let sqr= ->x x*x;sqr(5)", res: vFloat(25)},
+		{name: "map", exp: "let map={a:->x x*x,b:5};map.a(map.b)", res: vFloat(25)},
+		{name: "list", exp: "list(10).map(->i {a:i, b:i*i}).map(->e e.b).sum()", res: vFloat(285)},
+		{name: "list2", exp: "list(10).map(->i i*i).sum()", res: vFloat(285)},
 	}
 
 	p := New()
@@ -256,7 +238,7 @@ func Test_stream(t *testing.T) {
 }
 
 func Test_closure(t *testing.T) {
-	exp := "list.map(->e e.a).unique().order(->e e).map(-->name [name,list.filter(-->e e.a=name).map(->e e.b).sum()])"
+	exp := "list.map(->e e.a).unique().order(->e e).map(->name [name,list.filter(->e e.a=name).map(->e e.b).sum()])"
 
 	var list vList
 	var result vList

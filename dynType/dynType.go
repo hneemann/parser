@@ -70,24 +70,24 @@ func (v vBool) Float() float64 {
 	}
 }
 
-type vLambda struct {
-	lambda parser.Lambda[Value]
+type vClosure struct {
+	closure parser.Closure[Value]
 }
 
-func (v vLambda) Bool() bool {
+func (v vClosure) Bool() bool {
 	return false
 }
 
-func (v vLambda) Float() float64 {
+func (v vClosure) Float() float64 {
 	return 0
 }
 
-func (v vLambda) String() string {
+func (v vClosure) String() string {
 	return ""
 }
 
-func (v vLambda) Eval(val Value) Value {
-	return v.lambda.Eval(val)
+func (v vClosure) Eval(val Value) Value {
+	return v.closure.Eval(val)
 }
 
 type vList []Value
@@ -110,31 +110,31 @@ func (v vList) String() string {
 	return b.String()
 }
 
-func (v vList) Filter(lambda vLambda) vList {
+func (v vList) Filter(lambda vClosure) vList {
 	var res vList
 	for _, entry := range v {
-		if lambda.lambda.Eval(entry).Bool() {
+		if lambda.closure.Eval(entry).Bool() {
 			res = append(res, entry)
 		}
 	}
 	return res
 }
 
-func (v vList) Map(lambda vLambda) vList {
+func (v vList) Map(lambda vClosure) vList {
 	var res vList
 	for _, entry := range v {
-		res = append(res, lambda.lambda.Eval(entry))
+		res = append(res, lambda.closure.Eval(entry))
 	}
 	return res
 }
 
-func (v vList) Reduce(lambda vLambda) Value {
+func (v vList) Reduce(lambda vClosure) Value {
 	var res Value
 	for i, entry := range v {
 		if i == 0 {
 			res = entry
 		} else {
-			res = lambda.lambda.Eval(vMap{"sum": res, "value": entry})
+			res = lambda.closure.Eval(vMap{"sum": res, "value": entry})
 		}
 	}
 	return res
@@ -167,7 +167,7 @@ func (v vList) Unique() vList {
 
 type listOrder struct {
 	list   vList
-	lambda vLambda
+	lambda vClosure
 }
 
 func (l listOrder) Len() int {
@@ -189,7 +189,7 @@ func (l listOrder) Swap(i, j int) {
 	l.list[i], l.list[j] = l.list[j], l.list[i]
 }
 
-func (v vList) Order(lambda vLambda) vList {
+func (v vList) Order(lambda vClosure) vList {
 	lo := listOrder{list: v, lambda: lambda}
 	sort.Sort(lo)
 	return lo.list
@@ -407,16 +407,16 @@ func (c arrayHandler) GetElement(i Value, list Value) (Value, error) {
 	}
 }
 
-type lambdaCreator struct {
+type closureHandler struct {
 }
 
-func (c lambdaCreator) Create(l parser.Lambda[Value]) Value {
-	return vLambda{l}
+func (c closureHandler) Create(l parser.Closure[Value]) Value {
+	return vClosure{l}
 }
 
-func (c lambdaCreator) IsLambda(value Value) (parser.Lambda[Value], bool) {
-	if l, ok := value.(vLambda); ok {
-		return l.lambda, true
+func (c closureHandler) IsClosure(value Value) (*parser.Closure[Value], bool) {
+	if l, ok := value.(vClosure); ok {
+		return &l.closure, true
 	}
 	return nil, false
 }
@@ -470,7 +470,7 @@ func New() *parser.Parser[Value] {
 		ValFromNum(parseNum).
 		ValFromStr(parseStr).
 		ArrayHandler(arrayHandler{}).
-		LambdaCreator(lambdaCreator{}).
+		ClosureHandler(closureHandler{}).
 		MapHandler(mapHandler{}).
 		Const("true", vBool(true)).
 		Const("false", vBool(false)).

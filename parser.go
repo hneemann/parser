@@ -67,7 +67,7 @@ type Parser[V any] struct {
 	numToValue     func(s string) (V, error)
 	strToValue     func(s string) (V, error)
 	arrayHandler   Array[V]
-	lambdaCreator  LambdaCreator[V]
+	closureHandler ClosureHandler[V]
 	mapHandler     Map[V]
 	textOperators  map[string]string
 	number         Matcher
@@ -97,13 +97,13 @@ type Array[V any] interface {
 	GetElement(index V, list V) (V, error)
 }
 
-// LambdaCreator allows creating Lambdas
-type LambdaCreator[V any] interface {
-	// Create creates a Lambda
-	Create(Lambda[V]) V
+// ClosureHandler allows creating closures
+type ClosureHandler[V any] interface {
+	// Create creates a Closure
+	Create(Closure[V]) V
 
-	// IsLambda checks, if argument is a lambda expression
-	IsLambda(V) (Lambda[V], bool)
+	// IsClosure checks, if argument is a Closure
+	IsClosure(V) (*Closure[V], bool)
 }
 
 // Map allows creating and to access maps
@@ -145,22 +145,6 @@ func (e ConstExpression[V]) isConstant() bool {
 // Function is the return type of the parser
 type Function[V any] func(context Variables[V]) (V, error)
 
-// Lambda is used to store a lambda function
-type Lambda[V any] interface {
-	// Eval evaluates the lambda expression
-	Eval(V) V
-}
-
-type simpleLambda[V any] struct {
-	exp  Expression[V]
-	name string
-}
-
-func (l simpleLambda[V]) Eval(value V) V {
-	c := VarMap[V]{l.name: value}
-	return l.exp.Eval(c)
-}
-
 type addVarContext[V any] struct {
 	name   string
 	value  V
@@ -174,12 +158,13 @@ func (avc addVarContext[V]) Get(name string) (V, bool) {
 	return avc.parent.Get(name)
 }
 
-type closure[V any] struct {
-	simpleLambda[V]
+type Closure[V any] struct {
+	exp     Expression[V]
+	name    string
 	context Variables[V]
 }
 
-func (c closure[V]) Eval(value V) V {
+func (c Closure[V]) Eval(value V) V {
 	return c.exp.Eval(addVarContext[V]{c.name, value, c.context})
 }
 
@@ -302,9 +287,9 @@ func (p *Parser[V]) ArrayHandler(h Array[V]) *Parser[V] {
 	return p
 }
 
-// LambdaHandler is used to set a converter that creates lambdas from an expression
-func (p *Parser[V]) LambdaCreator(h LambdaCreator[V]) *Parser[V] {
-	p.lambdaCreator = h
+// ClosureHandler is used to set a converter that creates closures from an expression
+func (p *Parser[V]) ClosureHandler(h ClosureHandler[V]) *Parser[V] {
+	p.closureHandler = h
 	return p
 }
 
@@ -498,11 +483,11 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 					expression = ExpressionFunc[V](func(context Variables[V]) V {
 						value := inner.Eval(context)
 
-						if p.lambdaCreator != nil && len(args) == 1 {
+						if p.closureHandler != nil && len(args) == 1 {
 							v, err := p.mapHandler.GetElement(name, value)
 							if err == nil {
-								if l, ok := p.lambdaCreator.IsLambda(v); ok {
-									return l.Eval(args[0].Eval(context))
+								if c, ok := p.closureHandler.IsClosure(v); ok {
+									return c.Eval(args[0].Eval(context))
 								}
 							}
 						}
@@ -630,15 +615,15 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 					})
 				}
 			} else {
-				if p.lambdaCreator != nil && len(args) == 1 {
+				if p.closureHandler != nil && len(args) == 1 {
 					return ExpressionFunc[V](func(context Variables[V]) V {
 						if v, ok := context.Get(name); ok {
-							if l, ok := p.lambdaCreator.IsLambda(v); ok {
+							if c, ok := p.closureHandler.IsClosure(v); ok {
 								arg := args[0].Eval(context)
-								return l.Eval(arg)
+								return c.Eval(arg)
 							}
 						}
-						panic("lambda '" + name + "' not found")
+						panic("Closure '" + name + "' not found")
 					})
 				}
 				panic("function '" + name + "' not found")
@@ -683,23 +668,15 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 			return p.arrayHandler.Create(a)
 		})
 	case tOperate:
-		if p.lambdaCreator != nil && t.image == "->" {
-			// lambda
-			t := tokenizer.Next()
-			if t.typ != tIdent {
-				panic("lambda ident is missing!")
-			}
-			e := p.parseExpression(tokenizer)
-			return ConstExpression[V]{p.lambdaCreator.Create(simpleLambda[V]{e, t.image})}
-		} else if p.lambdaCreator != nil && t.image == "-->" {
+		if p.closureHandler != nil && t.image == "->" {
 			// closure
 			t := tokenizer.Next()
 			if t.typ != tIdent {
-				panic("lambda ident is missing!")
+				panic("Closure ident is missing!")
 			}
 			e := p.parseExpression(tokenizer)
 			return ExpressionFunc[V](func(context Variables[V]) V {
-				return p.lambdaCreator.Create(closure[V]{simpleLambda[V]{e, t.image}, context})
+				return p.closureHandler.Create(Closure[V]{e, t.image, context})
 			})
 		} else {
 			panic("unexpected unary operator '" + t.image)

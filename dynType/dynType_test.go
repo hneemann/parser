@@ -180,6 +180,29 @@ func Test_streamConst(t *testing.T) {
 		assert.EqualValues(t, test.res, r, test.name)
 	}
 }
+func Test_Neg(t *testing.T) {
+	tests := []struct {
+		name    string
+		exp     string
+		res     Value
+		isConst bool
+	}{
+		{name: "map.neg", exp: "let m={a:2,b:3}; -m.a*2", res: vFloat(-4), isConst: false},
+		{name: "map.neg", exp: "let m={a:2,b:3}; -(-m.a*2)", res: vFloat(4), isConst: false},
+		{name: "map.neg", exp: "let m={a:2,b:3}; -m.a+m.b", res: vFloat(1), isConst: false},
+		{name: "arr.neg", exp: "let a=[1,2,3]; -a[1]*2", res: vFloat(-4), isConst: false},
+	}
+
+	p := New()
+	for _, test := range tests {
+		v, isConst, err := p.Parse(test.exp)
+		assert.EqualValues(t, isConst, test.isConst, test.name)
+		assert.NoError(t, err, test.name, test.name)
+		r, err := v(nil)
+		assert.NoError(t, err, test.name)
+		assert.EqualValues(t, test.res, r, test.name)
+	}
+}
 
 func Test_Lambda(t *testing.T) {
 	tests := []struct {
@@ -188,7 +211,6 @@ func Test_Lambda(t *testing.T) {
 		res     Value
 		isConst bool
 	}{
-		{name: "neg", exp: "let m={a:2,b:3}; -(m.a)*2", res: vFloat(-4), isConst: false},
 		{name: "simple", exp: "let sqr= ->x x*x;sqr(5)", res: vFloat(25), isConst: false},
 		{name: "map", exp: "let map={a:->x x*x,b:5};map.a(map.b)", res: vFloat(25), isConst: false},
 		{name: "list", exp: "list(10).map(->i {a:i, b:i*i}).map(->e e.b).sum()", res: vFloat(285), isConst: true},

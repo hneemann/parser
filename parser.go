@@ -425,8 +425,25 @@ func (p *Parser[V]) nextParserCall(op int) parserFunc[V] {
 			return p.parse(tokenizer, op+1)
 		}
 	} else {
-		return p.parseNonOperator
+		return p.parseUnary
 	}
+}
+
+func (p *Parser[V]) parseUnary(tokenizer *Tokenizer) Expression[V] {
+	if t := tokenizer.Peek(); t.typ == tOperate {
+		if u := p.unary[t.image]; u != nil {
+			t = tokenizer.Next()
+			e := p.parseNonOperator(tokenizer)
+			if e.isConstant() {
+				return ConstExpression[V]{u(e.Eval(nil))}
+			} else {
+				return ExpressionFunc[V](func(context Variables[V]) V {
+					return u(e.Eval(context))
+				})
+			}
+		}
+	}
+	return p.parseNonOperator(tokenizer)
 }
 
 func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
@@ -685,18 +702,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 				return p.lambdaCreator.Create(closure[V]{simpleLambda[V]{e, t.image}, context})
 			})
 		} else {
-			u := p.unary[t.image]
-			if u == nil {
-				panic("unary operator '" + t.image + "' not found!")
-			}
-			e := p.parseLiteral(tokenizer)
-			if e.isConstant() {
-				return ConstExpression[V]{u(e.Eval(nil))}
-			} else {
-				return ExpressionFunc[V](func(context Variables[V]) V {
-					return u(e.Eval(context))
-				})
-			}
+			panic("unexpected unary operator '" + t.image)
 		}
 	case tNumber:
 		if p.numToValue == nil {
@@ -724,7 +730,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 		}
 		return e
 	default:
-		panic("unknown token type: " + t.image)
+		panic("unexpected token type: " + t.image)
 	}
 }
 

@@ -567,66 +567,77 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 	switch t.typ {
 	case tIdent:
 		name := t.image
-		if tokenizer.Peek().typ != tOpen {
-			// check if 'name' is a constant
-			if val, ok := p.constants[name]; ok {
-				return ConstExpression[V]{val}
-			}
-			if p.constantsLocal != nil {
-				if val, ok := p.constantsLocal[name]; ok {
-					return ConstExpression[V]{val}
-				}
-			}
-
-			// not a constant, needs to be requested at evaluation time
+		if cl := tokenizer.Peek(); p.closureHandler != nil && cl.typ == tOperate && cl.image == "->" {
+			// closure
+			tokenizer.Next()
+			e := p.parseExpression(tokenizer)
 			return ExpressionFunc[V](func(context Variables[V]) V {
-				if context == nil {
-					panic("context is nil, variable '" + name + "' not found!")
-				}
-				if v, ok := context.Get(name); ok {
-					return v
-				} else {
-					panic("variable '" + name + "' not found!")
-				}
+				return p.closureHandler.Create(Closure[V]{e, name, context})
 			})
 		} else {
-			tokenizer.Next()
-			args, allArgsConst := p.parseArgs(tokenizer, tClose)
-			if f, ok := p.functions[name]; ok {
-				if len(args) < f.minArgs {
-					panic("function '" + name + "' requires at least " + strconv.Itoa(f.minArgs) + " arguments")
-				} else if len(args) > f.maxArgs {
-					panic("function '" + name + "' requires at most " + strconv.Itoa(f.maxArgs) + " arguments")
-				} else {
-					if f.isPure && allArgsConst {
-						a := make([]V, len(args))
-						for i, e := range args {
-							a[i] = e.Eval(nil)
-						}
-						r := f.function(a...)
-						return ConstExpression[V]{r}
+			if tokenizer.Peek().typ != tOpen {
+				// ident
+				// check if 'name' is a constant
+				if val, ok := p.constants[name]; ok {
+					return ConstExpression[V]{val}
+				}
+				if p.constantsLocal != nil {
+					if val, ok := p.constantsLocal[name]; ok {
+						return ConstExpression[V]{val}
 					}
-					return ExpressionFunc[V](func(context Variables[V]) V {
-						a := make([]V, len(args))
-						for i, e := range args {
-							a[i] = e.Eval(context)
-						}
-						return f.function(a...)
-					})
 				}
+
+				// not a constant, needs to be requested at evaluation time
+				return ExpressionFunc[V](func(context Variables[V]) V {
+					if context == nil {
+						panic("context is nil, variable '" + name + "' not found!")
+					}
+					if v, ok := context.Get(name); ok {
+						return v
+					} else {
+						panic("variable '" + name + "' not found!")
+					}
+				})
 			} else {
-				if p.closureHandler != nil && len(args) == 1 {
-					return ExpressionFunc[V](func(context Variables[V]) V {
-						if v, ok := context.Get(name); ok {
-							if c, ok := p.closureHandler.IsClosure(v); ok {
-								arg := args[0].Eval(context)
-								return c.Eval(arg)
+				// function
+				tokenizer.Next()
+				args, allArgsConst := p.parseArgs(tokenizer, tClose)
+				if f, ok := p.functions[name]; ok {
+					if len(args) < f.minArgs {
+						panic("function '" + name + "' requires at least " + strconv.Itoa(f.minArgs) + " arguments")
+					} else if len(args) > f.maxArgs {
+						panic("function '" + name + "' requires at most " + strconv.Itoa(f.maxArgs) + " arguments")
+					} else {
+						if f.isPure && allArgsConst {
+							a := make([]V, len(args))
+							for i, e := range args {
+								a[i] = e.Eval(nil)
 							}
+							r := f.function(a...)
+							return ConstExpression[V]{r}
 						}
-						panic("Closure '" + name + "' not found")
-					})
+						return ExpressionFunc[V](func(context Variables[V]) V {
+							a := make([]V, len(args))
+							for i, e := range args {
+								a[i] = e.Eval(context)
+							}
+							return f.function(a...)
+						})
+					}
+				} else {
+					if p.closureHandler != nil && len(args) == 1 {
+						return ExpressionFunc[V](func(context Variables[V]) V {
+							if v, ok := context.Get(name); ok {
+								if c, ok := p.closureHandler.IsClosure(v); ok {
+									arg := args[0].Eval(context)
+									return c.Eval(arg)
+								}
+							}
+							panic("Closure '" + name + "' not found")
+						})
+					}
+					panic("function '" + name + "' not found")
 				}
-				panic("function '" + name + "' not found")
 			}
 		}
 	case tOpenCurly:
@@ -667,20 +678,6 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 			}
 			return p.arrayHandler.Create(a)
 		})
-	case tOperate:
-		if p.closureHandler != nil && t.image == "->" {
-			// closure
-			t := tokenizer.Next()
-			if t.typ != tIdent {
-				panic("Closure ident is missing!")
-			}
-			e := p.parseExpression(tokenizer)
-			return ExpressionFunc[V](func(context Variables[V]) V {
-				return p.closureHandler.Create(Closure[V]{e, t.image, context})
-			})
-		} else {
-			panic("unexpected unary operator '" + t.image)
-		}
 	case tNumber:
 		if p.numToValue == nil {
 			panic("no number values allowed")

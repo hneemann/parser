@@ -467,40 +467,24 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 			} else {
 				//Method call
 				tokenizer.Next()
-				args, argsConst := p.parseArgs(tokenizer, tClose)
-				if inner.isConstant() && argsConst {
-					a := make([]reflect.Value, len(args)+1)
-					a[0] = reflect.ValueOf(inner.Eval(nil))
-					for i, e := range args {
-						if e.isConstant() {
-							a[i+1] = reflect.ValueOf(e.Eval(nil))
-						} else {
-							panic("arg not const")
-						}
-					}
-					expression = ConstExpression[V]{callFunc(inner.Eval(nil), name, a)}
-				} else {
-					expression = ExpressionFunc[V](func(context Variables[V]) V {
-						value := inner.Eval(context)
-
-						if p.closureHandler != nil && len(args) == 1 {
-							v, err := p.mapHandler.GetElement(name, value)
-							if err == nil {
-								if c, ok := p.closureHandler.IsClosure(v); ok {
-									return c.Eval(args[0].Eval(context))
-								}
+				args, _ := p.parseArgs(tokenizer, tClose)
+				expression = ExpressionFunc[V](func(context Variables[V]) V {
+					value := inner.Eval(context)
+					if p.closureHandler != nil && len(args) == 1 {
+						v, err := p.mapHandler.GetElement(name, value)
+						if err == nil {
+							if c, ok := p.closureHandler.IsClosure(v); ok {
+								return c.Eval(args[0].Eval(context))
 							}
 						}
-
-						a := make([]reflect.Value, len(args)+1)
-						a[0] = reflect.ValueOf(value)
-						for i, e := range args {
-							a[i+1] = reflect.ValueOf(e.Eval(context))
-						}
-
-						return callFunc(value, name, a)
-					})
-				}
+					}
+					a := make([]reflect.Value, len(args)+1)
+					a[0] = reflect.ValueOf(value)
+					for i, e := range args {
+						a[i+1] = reflect.ValueOf(e.Eval(context))
+					}
+					return callFunc(value, name, a)
+				})
 			}
 		case tOpenBracket:
 			if p.arrayHandler == nil {

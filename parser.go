@@ -145,27 +145,49 @@ func (e ConstExpression[V]) isConstant() bool {
 // Function is the return type of the parser
 type Function[V any] func(context Variables[V]) (V, error)
 
-type addVarContext[V any] struct {
-	name   string
-	value  V
+type addVarsContext[V any] struct {
+	names  []string
+	values []V
 	parent Variables[V]
 }
 
-func (avc addVarContext[V]) Get(name string) (V, bool) {
-	if name == avc.name {
-		return avc.value, true
+func (avc addVarsContext[V]) Get(name string) (V, bool) {
+	for i, n := range avc.names {
+		if name == n {
+			return avc.values[i], true
+		}
+	}
+	if avc.parent == nil {
+		var r V
+		return r, false
 	}
 	return avc.parent.Get(name)
 }
 
 type Closure[V any] struct {
 	exp     Expression[V]
-	name    string
+	name    []string
 	context Variables[V]
 }
 
-func (c Closure[V]) Eval(value V) V {
-	return c.exp.Eval(addVarContext[V]{c.name, value, c.context})
+func (c Closure[V]) Eval(values []V) V {
+	if c.Args() == len(values) {
+		return c.exp.Eval(addVarsContext[V]{c.name, values, c.context})
+	} else {
+		panic("closure: non matching number of arguments")
+	}
+}
+
+func (c Closure[V]) evalWithExp(args []Expression[V], context Variables[V]) V {
+	values := make([]V, len(args))
+	for i := range args {
+		values[i] = args[i].Eval(context)
+	}
+	return c.Eval(values)
+}
+
+func (c Closure[V]) Args() int {
+	return len(c.name)
 }
 
 // New creates a new Parser
@@ -371,7 +393,7 @@ func (p *Parser[V]) parseExpression(tokenizer *Tokenizer) Expression[V] {
 		inner := p.parseExpression(tokenizer)
 		return ExpressionFunc[V](func(context Variables[V]) V {
 			val := exp.Eval(context)
-			innerContext := addVarContext[V]{name: name, value: val, parent: context}
+			innerContext := addVarsContext[V]{names: []string{name}, values: []V{val}, parent: context}
 			return inner.Eval(innerContext)
 		})
 	} else {
@@ -470,11 +492,11 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 				args, _ := p.parseArgs(tokenizer, tClose)
 				expression = ExpressionFunc[V](func(context Variables[V]) V {
 					value := inner.Eval(context)
-					if p.closureHandler != nil && len(args) == 1 {
+					if p.closureHandler != nil {
 						v, err := p.mapHandler.GetElement(name, value)
 						if err == nil {
 							if c, ok := p.closureHandler.IsClosure(v); ok {
-								return c.Eval(args[0].Eval(context))
+								return c.evalWithExp(args, context)
 							}
 						}
 					}
@@ -552,11 +574,11 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 	case tIdent:
 		name := t.image
 		if cl := tokenizer.Peek(); p.closureHandler != nil && cl.typ == tOperate && cl.image == "->" {
-			// closure
+			// closure, short definition x->[exp]
 			tokenizer.Next()
 			e := p.parseExpression(tokenizer)
 			return ExpressionFunc[V](func(context Variables[V]) V {
-				return p.closureHandler.Create(Closure[V]{e, name, context})
+				return p.closureHandler.Create(Closure[V]{e, []string{name}, context})
 			})
 		} else {
 			if tokenizer.Peek().typ != tOpen {
@@ -584,43 +606,57 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 				})
 			} else {
 				// function
-				tokenizer.Next()
-				args, allArgsConst := p.parseArgs(tokenizer, tClose)
-				if f, ok := p.functions[name]; ok {
-					if len(args) < f.minArgs {
-						panic("function '" + name + "' requires at least " + strconv.Itoa(f.minArgs) + " arguments")
-					} else if len(args) > f.maxArgs {
-						panic("function '" + name + "' requires at most " + strconv.Itoa(f.maxArgs) + " arguments")
-					} else {
-						if f.isPure && allArgsConst {
-							a := make([]V, len(args))
-							for i, e := range args {
-								a[i] = e.Eval(nil)
-							}
-							r := f.function(a...)
-							return ConstExpression[V]{r}
-						}
-						return ExpressionFunc[V](func(context Variables[V]) V {
-							a := make([]V, len(args))
-							for i, e := range args {
-								a[i] = e.Eval(context)
-							}
-							return f.function(a...)
-						})
+				tokenizer.Next() // skip tOpen
+				if p.closureHandler != nil && name == "closure" {
+					// multi arg closure definition: closure(a,b)->[exp]
+					names := p.parseIdentList(tokenizer)
+					t := tokenizer.Next()
+					if !(t.typ == tOperate && t.image == "->") {
+						panic(unexpected("->", t))
 					}
+					e := p.parseExpression(tokenizer)
+					return ExpressionFunc[V](func(context Variables[V]) V {
+						return p.closureHandler.Create(Closure[V]{e, names, context})
+					})
 				} else {
-					if p.closureHandler != nil && len(args) == 1 {
-						return ExpressionFunc[V](func(context Variables[V]) V {
-							if v, ok := context.Get(name); ok {
-								if c, ok := p.closureHandler.IsClosure(v); ok {
-									arg := args[0].Eval(context)
-									return c.Eval(arg)
+					args, allArgsConst := p.parseArgs(tokenizer, tClose)
+					if f, ok := p.functions[name]; ok {
+						// predeclared function
+						if len(args) < f.minArgs {
+							panic("function '" + name + "' requires at least " + strconv.Itoa(f.minArgs) + " arguments")
+						} else if len(args) > f.maxArgs {
+							panic("function '" + name + "' requires at most " + strconv.Itoa(f.maxArgs) + " arguments")
+						} else {
+							if f.isPure && allArgsConst {
+								a := make([]V, len(args))
+								for i, e := range args {
+									a[i] = e.Eval(nil)
 								}
+								r := f.function(a...)
+								return ConstExpression[V]{r}
 							}
-							panic("Closure '" + name + "' not found")
-						})
+							return ExpressionFunc[V](func(context Variables[V]) V {
+								a := make([]V, len(args))
+								for i, e := range args {
+									a[i] = e.Eval(context)
+								}
+								return f.function(a...)
+							})
+						}
+					} else {
+						// call to closure
+						if p.closureHandler != nil {
+							return ExpressionFunc[V](func(context Variables[V]) V {
+								if v, ok := context.Get(name); ok {
+									if c, ok := p.closureHandler.IsClosure(v); ok {
+										return c.evalWithExp(args, context)
+									}
+								}
+								panic("closure '" + name + "' not found")
+							})
+						}
+						panic("function '" + name + "' not found")
 					}
-					panic("function '" + name + "' not found")
 				}
 			}
 		}
@@ -736,6 +772,26 @@ func (p Parser[V]) parseMap(tokenizer *Tokenizer) (map[string]Expression[V], boo
 			}
 		default:
 			panic(unexpected(",", t))
+		}
+	}
+}
+
+func (p *Parser[V]) parseIdentList(tokenizer *Tokenizer) []string {
+	var names []string
+	for {
+		t := tokenizer.Next()
+		if t.typ == tIdent {
+			names = append(names, t.image)
+			t = tokenizer.Next()
+			switch t.typ {
+			case tClose:
+				return names
+			case tComma:
+			default:
+				panic("expected ',' or ')'")
+			}
+		} else {
+			panic("expected identifier")
 		}
 	}
 }

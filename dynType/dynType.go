@@ -86,7 +86,7 @@ func (v vClosure) String() string {
 	return ""
 }
 
-func (v vClosure) Eval(val Value) Value {
+func (v vClosure) Eval(val []Value) Value {
 	return v.closure.Eval(val)
 }
 
@@ -110,31 +110,40 @@ func (v vList) String() string {
 	return b.String()
 }
 
-func (v vList) Filter(lambda vClosure) vList {
+func (v vList) Filter(closure vClosure) vList {
+	if closure.closure.Args() != 1 {
+		panic("filter needs closure with one argument")
+	}
 	var res vList
 	for _, entry := range v {
-		if lambda.closure.Eval(entry).Bool() {
+		if closure.closure.Eval([]Value{entry}).Bool() {
 			res = append(res, entry)
 		}
 	}
 	return res
 }
 
-func (v vList) Map(lambda vClosure) vList {
+func (v vList) Map(closure vClosure) vList {
+	if closure.closure.Args() != 1 {
+		panic("map needs closure with one argument")
+	}
 	var res vList
 	for _, entry := range v {
-		res = append(res, lambda.closure.Eval(entry))
+		res = append(res, closure.closure.Eval([]Value{entry}))
 	}
 	return res
 }
 
-func (v vList) Reduce(lambda vClosure) Value {
+func (v vList) Reduce(closure vClosure) Value {
+	if closure.closure.Args() != 1 {
+		panic("reduce needs closure with one argument")
+	}
 	var res Value
 	for i, entry := range v {
 		if i == 0 {
 			res = entry
 		} else {
-			res = lambda.closure.Eval(vMap{"sum": res, "value": entry})
+			res = closure.closure.Eval([]Value{vMap{"sum": res, "value": entry}})
 		}
 	}
 	return res
@@ -166,8 +175,8 @@ func (v vList) Unique() vList {
 }
 
 type listOrder struct {
-	list   vList
-	lambda vClosure
+	list    vList
+	closure vClosure
 }
 
 func (l listOrder) Len() int {
@@ -175,8 +184,8 @@ func (l listOrder) Len() int {
 }
 
 func (l listOrder) Less(i, j int) bool {
-	vi := l.lambda.Eval(l.list[i])
-	vj := l.lambda.Eval(l.list[j])
+	vi := l.closure.Eval([]Value{l.list[i]})
+	vj := l.closure.Eval([]Value{l.list[j]})
 	si, oki := vi.(vString)
 	sj, okj := vj.(vString)
 	if oki && okj {
@@ -189,8 +198,11 @@ func (l listOrder) Swap(i, j int) {
 	l.list[i], l.list[j] = l.list[j], l.list[i]
 }
 
-func (v vList) Order(lambda vClosure) vList {
-	lo := listOrder{list: v, lambda: lambda}
+func (v vList) Order(closure vClosure) vList {
+	if closure.closure.Args() != 1 {
+		panic("order needs closure with one argument")
+	}
+	lo := listOrder{list: v, closure: closure}
 	sort.Sort(lo)
 	return lo.list
 }

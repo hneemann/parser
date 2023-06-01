@@ -186,17 +186,20 @@ func Test_Lambda(t *testing.T) {
 	tests := []struct {
 		name    string
 		exp     string
-		res     Value
+		res     float64
 		isConst bool
 	}{
-		{name: "first", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(e->e.a>1).First().b", res: vFloat(4)},
-		{name: "sum", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(e->e.a>1).Map(e->e.a*e.b).Sum()", res: vFloat(99)},
-		{name: "reduce", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].Filter(e->e.a>1).Map(e->e.a*e.b).Reduce(e->e.sum+e.value)", res: vFloat(99)},
-		{name: "max", exp: "[{a:1,b:1},{a:2,b:4},{a:4,b:16},{a:3,b:9}].Map(e->e.b).Reduce(e->ite(e.sum>e.value,e.sum,e.value))", res: vFloat(16)},
-		{name: "simple", exp: "let sqr=x->x*x;sqr(5)", res: vFloat(25)},
-		{name: "map", exp: "let map={a:x->x*x,b:5};map.a(map.b)", res: vFloat(25)},
-		{name: "list", exp: "list(10).map(i->{a:i, b:i*i}).map(e->e.b).sum()", res: vFloat(285)},
-		{name: "list2", exp: "list(10).map(i->i*i).sum()", res: vFloat(285)},
+		{name: "first", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].filter(e->e.a>1).first().b", res: 4},
+		{name: "sum", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].filter(e->e.a>1).map(e->e.a*e.b).sum()", res: 99},
+		{name: "reduce", exp: "[{a:1,b:1},{a:2,b:4},{a:3,b:9},{a:4,b:16}].filter(e->e.a>1).map(e->e.a*e.b).reduce(e->e.sum+e.value)", res: 99},
+		{name: "max", exp: "[{a:1,b:1},{a:2,b:4},{a:4,b:16},{a:3,b:9}].map(e->e.b).reduce(e->ite(e.sum>e.value,e.sum,e.value))", res: 16},
+		{name: "simple", exp: "let sqr=x->x*x;sqr(5)", res: 25},
+		{name: "simpleLong", exp: "let sqr=closure(x)->x*x;sqr(5)", res: 25},
+		{name: "two", exp: "let sum=closure(a,b)->a+b;sum(20,5)", res: 25},
+		{name: "map", exp: "let map={a:x->x*x,b:5};map.a(map.b)", res: 25},
+		{name: "list", exp: "list(10).map(i->{a:i, b:i*i}).map(e->e.b).sum()", res: 285},
+		{name: "list2", exp: "list(10).map(i->i*i).sum()", res: 285},
+		{name: "newton", exp: "let sqrt=x->list(10).filter(e->e>0).reduce(e->e.sum+(x-e.sum*e.sum)/(2*e.sum));sqrt(2)", res: math.Sqrt(2)},
 	}
 
 	p := New()
@@ -206,7 +209,11 @@ func Test_Lambda(t *testing.T) {
 		assert.NoError(t, err, test.name)
 		r, err := v(nil)
 		assert.NoError(t, err, test.name)
-		assert.EqualValues(t, test.res, r, test.name)
+		if f, ok := r.(vFloat); ok {
+			assert.InDelta(t, float64(test.res), float64(f), 1e-6, test.name)
+		} else {
+			t.Fail()
+		}
 	}
 }
 

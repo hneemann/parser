@@ -256,10 +256,10 @@ func Test_closure(t *testing.T) {
 	}
 	p := New()
 
-	v, isConst, err := p.ParseConst(exp, map[string]Value{"list": list})
+	v, isConst, err := p.Parse(exp)
 	assert.False(t, isConst)
 	assert.NoError(t, err)
-	r, err := v(nil)
+	r, err := v(parser.VarMap[Value]{"list": list})
 	assert.NoError(t, err)
 	assert.EqualValues(t, result, r)
 }

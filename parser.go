@@ -63,12 +63,11 @@ type Parser[V any] struct {
 	unary          map[string]func(a V) V
 	functions      map[string]function[V]
 	constants      map[string]V
-	constantsLocal map[string]V
 	numToValue     func(s string) (V, error)
 	strToValue     func(s string) (V, error)
-	arrayHandler   Array[V]
+	arrayHandler   ArrayHandler[V]
 	closureHandler ClosureHandler[V]
-	mapHandler     Map[V]
+	mapHandler     MapHandler[V]
 	textOperators  map[string]string
 	number         Matcher
 	identifier     Matcher
@@ -89,8 +88,8 @@ func (m VarMap[V]) Get(name string) (V, bool) {
 	return v, ok
 }
 
-// Array allows creating and to access arrays
-type Array[V any] interface {
+// ArrayHandler allows creating and to access arrays
+type ArrayHandler[V any] interface {
 	// Create creates an array
 	Create([]V) V
 	// GetElement returns a value from an array
@@ -106,8 +105,8 @@ type ClosureHandler[V any] interface {
 	IsClosure(V) (*Closure[V], bool)
 }
 
-// Map allows creating and to access maps
-type Map[V any] interface {
+// MapHandler allows creating and to access maps
+type MapHandler[V any] interface {
 	// Create creates a map
 	Create(map[string]V) V
 	// GetElement returns a value from the map
@@ -304,7 +303,7 @@ func (p *Parser[V]) ValFromStr(toVal func(val string) (V, error)) *Parser[V] {
 }
 
 // ArrayHandler is used to set a converter that creates values from a list of values
-func (p *Parser[V]) ArrayHandler(h Array[V]) *Parser[V] {
+func (p *Parser[V]) ArrayHandler(h ArrayHandler[V]) *Parser[V] {
 	p.arrayHandler = h
 	return p
 }
@@ -316,18 +315,13 @@ func (p *Parser[V]) ClosureHandler(h ClosureHandler[V]) *Parser[V] {
 }
 
 // MapHandler is used to set a converter that creates values from a map of values
-func (p *Parser[V]) MapHandler(m Map[V]) *Parser[V] {
+func (p *Parser[V]) MapHandler(m MapHandler[V]) *Parser[V] {
 	p.mapHandler = m
 	return p
 }
 
 // Parse parses the given string and returns a Function
 func (p *Parser[V]) Parse(str string) (f Function[V], isConst bool, err error) {
-	return p.ParseConst(str, nil)
-}
-
-// ParseConst parses the given string with additional constants and returns a Function
-func (p *Parser[V]) ParseConst(str string, constants map[string]V) (f Function[V], isConst bool, err error) {
 	defer func() {
 		rec := recover()
 		if rec != nil {
@@ -343,7 +337,6 @@ func (p *Parser[V]) ParseConst(str string, constants map[string]V) (f Function[V
 		NewTokenizer(str, p.number, p.identifier, p.operator).
 			SetTextOperators(p.textOperators)
 
-	p.constantsLocal = constants
 	e := p.parseExpression(tokenizer)
 	t := tokenizer.Next()
 	if t.typ != tEof {
@@ -466,7 +459,7 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 			}
 			name := t.image
 			if tokenizer.Peek().typ != tOpen {
-				//Map access
+				//MapHandler access
 				if p.mapHandler == nil {
 					panic("unknown token type: " + tokenizer.Next().image)
 				}
@@ -586,11 +579,6 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 				// check if 'name' is a constant
 				if val, ok := p.constants[name]; ok {
 					return ConstExpression[V]{val}
-				}
-				if p.constantsLocal != nil {
-					if val, ok := p.constantsLocal[name]; ok {
-						return ConstExpression[V]{val}
-					}
 				}
 
 				// not a constant, needs to be requested at evaluation time
@@ -751,7 +739,7 @@ func (p *Parser[V]) parseArgs(tokenizer *Tokenizer, closeList TokenType) ([]Expr
 	}
 }
 
-func (p Parser[V]) parseMap(tokenizer *Tokenizer) (map[string]Expression[V], bool) {
+func (p *Parser[V]) parseMap(tokenizer *Tokenizer) (map[string]Expression[V], bool) {
 	m := map[string]Expression[V]{}
 	allEntriesConst := true
 	for {

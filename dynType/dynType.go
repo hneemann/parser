@@ -86,7 +86,7 @@ func (v vClosure) String() string {
 	return ""
 }
 
-func (v vClosure) Eval(val []Value) Value {
+func (v vClosure) Eval(val ...Value) Value {
 	return v.closure.Eval(val)
 }
 
@@ -134,17 +134,13 @@ func (v vList) Map(closure vClosure) vList {
 	return res
 }
 
-func (v vList) Reduce(closure vClosure) Value {
-	if closure.closure.Args() != 1 {
-		panic("reduce needs closure with one argument")
+func (v vList) Reduce(initial Value, closure vClosure) Value {
+	if closure.closure.Args() != 2 {
+		panic("reduce needs closure with two arguments")
 	}
-	var res Value
-	for i, entry := range v {
-		if i == 0 {
-			res = entry
-		} else {
-			res = closure.closure.Eval([]Value{vMap{"sum": res, "value": entry}})
-		}
+	res := initial
+	for _, entry := range v {
+		res = closure.closure.Eval([]Value{res, entry})
 	}
 	return res
 }
@@ -184,8 +180,8 @@ func (l listOrder) Len() int {
 }
 
 func (l listOrder) Less(i, j int) bool {
-	vi := l.closure.Eval([]Value{l.list[i]})
-	vj := l.closure.Eval([]Value{l.list[j]})
+	vi := l.closure.Eval(l.list[i])
+	vj := l.closure.Eval(l.list[j])
 	si, oki := vi.(vString)
 	sj, okj := vj.(vString)
 	if oki && okj {

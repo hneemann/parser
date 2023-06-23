@@ -14,6 +14,7 @@ import (
 type operator[V any] struct {
 	operator string
 	operate  func(a, b Expression[V], context Variables[V]) V
+	isPure   bool
 }
 
 type simpleNumber struct {
@@ -207,16 +208,17 @@ func New[V any]() *Parser[V] {
 func (p *Parser[V]) Op(name string, operate func(a, b V) V) *Parser[V] {
 	return p.OpContext(name, func(a, b Expression[V], c Variables[V]) V {
 		return operate(a.Eval(c), b.Eval(c))
-	})
+	}, true)
 }
 
 // OpContext adds an operation to the parser
 // The name gives the operation name e.g."+" and the function
 // needs to implement the operation.
-func (p *Parser[V]) OpContext(name string, operate func(a, b Expression[V], context Variables[V]) V) *Parser[V] {
+func (p *Parser[V]) OpContext(name string, operate func(a, b Expression[V], context Variables[V]) V, isPure bool) *Parser[V] {
 	p.operators = append(p.operators, operator[V]{
 		operator: name,
 		operate:  operate,
+		isPure:   isPure,
 	})
 	return p
 }
@@ -405,7 +407,7 @@ func (p *Parser[V]) parse(tokenizer *Tokenizer, op int) Expression[V] {
 			aa := a
 			bb := next(tokenizer)
 
-			if aa.isConstant() && bb.isConstant() {
+			if aa.isConstant() && bb.isConstant() && operator.isPure {
 				r := operator.operate(aa, bb, nil)
 				a = ConstExpression[V]{constVal: r}
 			} else {

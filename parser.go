@@ -103,7 +103,7 @@ type ClosureHandler[V any] interface {
 	Create(Closure[V]) V
 
 	// IsClosure checks, if argument is a Closure
-	IsClosure(V) (*Closure[V], bool)
+	IsClosure(V) (Closure[V], bool)
 }
 
 // MapHandler allows creating and to access maps
@@ -164,13 +164,18 @@ func (avc addVarsContext[V]) Get(name string) (V, bool) {
 	return avc.parent.Get(name)
 }
 
-type Closure[V any] struct {
+type Closure[V any] interface {
+	Eval(values []V) V
+	Args() int
+}
+
+type closure[V any] struct {
 	exp     Expression[V]
 	name    []string
 	context Variables[V]
 }
 
-func (c Closure[V]) Eval(values []V) V {
+func (c closure[V]) Eval(values []V) V {
 	if c.Args() == len(values) {
 		return c.exp.Eval(addVarsContext[V]{c.name, values, c.context})
 	} else {
@@ -178,7 +183,7 @@ func (c Closure[V]) Eval(values []V) V {
 	}
 }
 
-func (c Closure[V]) evalWithExp(args []Expression[V], context Variables[V]) V {
+func evalWithExp[V any](c Closure[V], args []Expression[V], context Variables[V]) V {
 	values := make([]V, len(args))
 	for i := range args {
 		values[i] = args[i].Eval(context)
@@ -186,7 +191,7 @@ func (c Closure[V]) evalWithExp(args []Expression[V], context Variables[V]) V {
 	return c.Eval(values)
 }
 
-func (c Closure[V]) Args() int {
+func (c closure[V]) Args() int {
 	return len(c.name)
 }
 
@@ -491,7 +496,7 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 						v, err := p.mapHandler.GetElement(name, value)
 						if err == nil {
 							if c, ok := p.closureHandler.IsClosure(v); ok {
-								return c.evalWithExp(args, context)
+								return evalWithExp[V](c, args, context)
 							}
 						}
 					}
@@ -573,7 +578,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 			tokenizer.Next()
 			e := p.parseExpression(tokenizer)
 			return ExpressionFunc[V](func(context Variables[V]) V {
-				return p.closureHandler.Create(Closure[V]{e, []string{name}, context})
+				return p.closureHandler.Create(closure[V]{e, []string{name}, context})
 			})
 		} else {
 			if tokenizer.Peek().typ != tOpen {
@@ -606,7 +611,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 					}
 					e := p.parseExpression(tokenizer)
 					return ExpressionFunc[V](func(context Variables[V]) V {
-						return p.closureHandler.Create(Closure[V]{e, names, context})
+						return p.closureHandler.Create(closure[V]{e, names, context})
 					})
 				} else {
 					args, allArgsConst := p.parseArgs(tokenizer, tClose)
@@ -639,7 +644,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 							return ExpressionFunc[V](func(context Variables[V]) V {
 								if v, ok := context.Get(name); ok {
 									if c, ok := p.closureHandler.IsClosure(v); ok {
-										return c.evalWithExp(args, context)
+										return evalWithExp(c, args, context)
 									}
 								}
 								panic("closure '" + name + "' not found")

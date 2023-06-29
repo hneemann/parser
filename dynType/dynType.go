@@ -422,9 +422,9 @@ func (c closureHandler) Create(l parser.Closure[Value]) Value {
 	return vClosure{l}
 }
 
-func (c closureHandler) IsClosure(value Value) (*parser.Closure[Value], bool) {
+func (c closureHandler) IsClosure(value Value) (parser.Closure[Value], bool) {
 	if l, ok := value.(vClosure); ok {
-		return &l.closure, true
+		return l.closure, true
 	}
 	return nil, false
 }

@@ -2,9 +2,11 @@
 package parser
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -73,6 +75,7 @@ type Parser[V any] struct {
 	number         Matcher
 	identifier     Matcher
 	operator       Matcher
+	typeOfValue    reflect.Type
 }
 
 // Variables is the interface which allows the evaluator to access variables
@@ -197,13 +200,15 @@ func (c closure[V]) Args() int {
 
 // New creates a new Parser
 func New[V any]() *Parser[V] {
+	var v *V
 	return &Parser[V]{
-		unary:      map[string]func(V) V{},
-		functions:  map[string]function[V]{},
-		constants:  map[string]V{},
-		number:     simpleNumber{},
-		identifier: simpleIdentifier{},
-		operator:   simpleOperator{},
+		unary:       map[string]func(V) V{},
+		functions:   map[string]function[V]{},
+		constants:   map[string]V{},
+		number:      simpleNumber{},
+		identifier:  simpleIdentifier{},
+		operator:    simpleOperator{},
+		typeOfValue: reflect.TypeOf(v).Elem(),
 	}
 }
 
@@ -505,7 +510,7 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 					for i, e := range args {
 						a[i+1] = reflect.ValueOf(e.Eval(context))
 					}
-					return callFunc(value, name, a)
+					return p.callFunc(value, name, a)
 				})
 			}
 		case tOpenBracket:
@@ -541,7 +546,7 @@ func (p *Parser[V]) parseNonOperator(tokenizer *Tokenizer) Expression[V] {
 	}
 }
 
-func callFunc[V any](value V, name string, args []reflect.Value) V {
+func (p *Parser[V]) callFunc(value V, name string, args []reflect.Value) V {
 	name = firstRuneUpper(name)
 	typeOf := reflect.TypeOf(value)
 	if m, ok := typeOf.MethodByName(name); ok {
@@ -556,7 +561,34 @@ func callFunc[V any](value V, name string, args []reflect.Value) V {
 			panic(fmt.Errorf("method %v does not return a single value: %v", name, len(res)))
 		}
 	} else {
-		panic(fmt.Errorf("method %v not found", name))
+		var buf bytes.Buffer
+	outer:
+		for i := 0; i < typeOf.NumMethod(); i++ {
+			m := typeOf.Method(i)
+			mt := m.Type
+			if mt.NumOut() == 1 {
+				if mt.Out(0).Implements(p.typeOfValue) {
+					for i := 0; i < mt.NumIn(); i++ {
+						if !mt.In(i).Implements(p.typeOfValue) {
+							continue outer
+						}
+					}
+					if buf.Len() > 0 {
+						buf.WriteString(", ")
+					}
+					buf.WriteString(m.Name)
+					buf.WriteString("(")
+					for i := 1; i < mt.NumIn(); i++ {
+						if i > 1 {
+							buf.WriteString(", ")
+						}
+						buf.WriteString(mt.In(i).Name())
+					}
+					buf.WriteString(")")
+				}
+			}
+		}
+		panic(fmt.Errorf("method %v not found, available are: "+buf.String(), name))
 	}
 }
 
@@ -647,10 +679,11 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 										return evalWithExp(c, args, context)
 									}
 								}
-								panic("closure '" + name + "' not found")
+								panic("closure '" + name + "' not found; functions available are: " + p.functionNames())
 							})
 						}
-						panic("function '" + name + "' not found")
+
+						panic("function '" + name + "' not found; available are: " + p.functionNames())
 					}
 				}
 			}
@@ -721,6 +754,39 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 	default:
 		panic("unexpected token type: " + t.image)
 	}
+}
+
+func (p *Parser[V]) functionNames() string {
+	var list []string
+	for f := range p.functions {
+		list = append(list, f)
+	}
+	sort.Strings(list)
+
+	var buf bytes.Buffer
+	for _, f := range list {
+		if buf.Len() > 0 {
+			buf.WriteString(", ")
+		}
+		buf.WriteString(f)
+		buf.WriteString("(")
+		fu := p.functions[f]
+		for i := 0; i < fu.minArgs; i++ {
+			if i > 0 {
+				buf.WriteString(",")
+			}
+			buf.WriteString("a")
+		}
+		if fu.maxArgs > fu.minArgs {
+			buf.WriteString("[")
+			for i := fu.minArgs; i < fu.maxArgs; i++ {
+				buf.WriteString(",a")
+			}
+			buf.WriteString("]")
+		}
+		buf.WriteString(")")
+	}
+	return buf.String()
 }
 
 func (p *Parser[V]) parseArgs(tokenizer *Tokenizer, closeList TokenType) ([]Expression[V], bool) {

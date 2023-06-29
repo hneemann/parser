@@ -5,6 +5,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"math"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -262,4 +263,23 @@ func Test_closure(t *testing.T) {
 	r, err := v(parser.VarMap[Value]{"list": list})
 	assert.NoError(t, err)
 	assert.EqualValues(t, result, r)
+}
+
+func Test_MethodNotFound(t *testing.T) {
+	tests := []struct {
+		name string
+		exp  string
+		res  string
+	}{
+		{name: "method", exp: "[1,2].notAvail()", res: "Map("},
+		{name: "func", exp: "let x=notAvail();1", res: "ite("},
+	}
+
+	for _, test := range tests {
+		v, _, err := New().Parse(test.exp)
+		assert.NoError(t, err)
+		_, err = v(parser.VarMap[Value]{})
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), test.res), test.name+"->"+err.Error())
+	}
 }

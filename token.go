@@ -53,6 +53,7 @@ type Tokenizer struct {
 	identifier    Matcher
 	operator      Matcher
 	textOperators map[string]string
+	allowComments bool
 }
 
 type Matcher interface {
@@ -60,7 +61,7 @@ type Matcher interface {
 	Matches(r rune) bool
 }
 
-func NewTokenizer(text string, number, identifier, operator Matcher) *Tokenizer {
+func NewTokenizer(text string, number, identifier, operator Matcher, allowComments bool) *Tokenizer {
 	t := make(chan Token)
 	tok := &Tokenizer{
 		str:           text,
@@ -68,6 +69,7 @@ func NewTokenizer(text string, number, identifier, operator Matcher) *Tokenizer 
 		number:        number,
 		identifier:    identifier,
 		operator:      operator,
+		allowComments: allowComments,
 		tok:           t}
 	go tok.run(t)
 	return tok
@@ -101,7 +103,7 @@ func (t *Tokenizer) Next() Token {
 
 func (t *Tokenizer) run(tokens chan<- Token) {
 	for {
-		switch t.next() {
+		switch t.next(true) {
 		case ' ', '\n', '\r', '\t':
 			continue
 		case EOF:
@@ -128,16 +130,16 @@ func (t *Tokenizer) run(tokens chan<- Token) {
 		case ';':
 			tokens <- Token{tSemicolon, ";"}
 		case '"':
-			image := t.read(func(c rune) bool { return c != '"' })
-			t.next()
+			image := t.readSkip(func(c rune) bool { return c != '"' }, false)
+			t.next(false)
 			tokens <- Token{tString, image}
 		case '\'':
-			image := t.read(func(c rune) bool { return c != '\'' })
-			t.next()
+			image := t.readSkip(func(c rune) bool { return c != '\'' }, false)
+			t.next(false)
 			tokens <- Token{tIdent, image}
 		default:
 			t.unread()
-			switch c := t.peek(); {
+			switch c := t.peek(true); {
 			case t.number.MatchesFirst(c):
 				image := t.read(t.number.Matches)
 				tokens <- Token{tNumber, image}
@@ -152,30 +154,52 @@ func (t *Tokenizer) run(tokens chan<- Token) {
 				image := t.read(t.operator.Matches)
 				tokens <- Token{tOperate, image}
 			default:
-				tokens <- Token{tInvalid, string(t.peek())}
+				tokens <- Token{tInvalid, string(t.peek(true))}
 			}
 		}
 	}
 }
 
-func (t *Tokenizer) peek() rune {
+func (t *Tokenizer) peek(skipComment bool) rune {
 	if t.isLast {
 		return t.last
 	}
 	if len(t.str) == 0 {
-		t.last = 0
+		t.last = EOF
 		return EOF
 	}
 	var size int
 	t.last, size = utf8.DecodeRuneInString(t.str)
+
+	if t.allowComments && skipComment {
+		if t.last == '/' && len(t.str) > size {
+			s, l := utf8.DecodeRuneInString(t.str[size:])
+			if s == '/' {
+				t.str = t.str[size+l:]
+				for {
+					s, l := utf8.DecodeRuneInString(t.str)
+					if s != '\n' && s != '\r' {
+						t.str = t.str[l:]
+						if len(t.str) == 0 {
+							return EOF
+						}
+					} else {
+						break
+					}
+				}
+				t.last, size = utf8.DecodeRuneInString(t.str)
+			}
+		}
+	}
+
 	t.isLast = true
 	t.str = t.str[size:]
 	return t.last
 }
 
-func (t *Tokenizer) consume() {
+func (t *Tokenizer) consume(skipComment bool) {
 	if !t.isLast {
-		t.peek()
+		t.peek(skipComment)
 	}
 	t.isLast = false
 }
@@ -184,16 +208,19 @@ func (t *Tokenizer) unread() {
 	t.isLast = true
 }
 
-func (t *Tokenizer) next() rune {
-	n := t.peek()
-	t.consume()
+func (t *Tokenizer) next(skipComment bool) rune {
+	n := t.peek(skipComment)
+	t.consume(skipComment)
 	return n
 }
-
 func (t *Tokenizer) read(valid func(c rune) bool) string {
+	return t.readSkip(valid, true)
+}
+
+func (t *Tokenizer) readSkip(valid func(c rune) bool, skipComment bool) string {
 	str := strings.Builder{}
 	for {
-		if c := t.next(); c != 0 && valid(c) {
+		if c := t.next(skipComment); c != 0 && valid(c) {
 			str.WriteRune(c)
 		} else {
 			t.unread()

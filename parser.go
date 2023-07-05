@@ -75,6 +75,7 @@ type Parser[V any] struct {
 	number         Matcher
 	identifier     Matcher
 	operator       Matcher
+	allowComments  bool
 	typeOfValue    reflect.Type
 }
 
@@ -332,6 +333,12 @@ func (p *Parser[V]) MapHandler(m MapHandler[V]) *Parser[V] {
 	return p
 }
 
+// AllowComments allows C style end of line comments
+func (p *Parser[V]) AllowComments() *Parser[V] {
+	p.allowComments = true
+	return p
+}
+
 // Parse parses the given string and returns a Function
 func (p *Parser[V]) Parse(str string) (f Function[V], isConst bool, err error) {
 	defer func() {
@@ -346,7 +353,7 @@ func (p *Parser[V]) Parse(str string) (f Function[V], isConst bool, err error) {
 		}
 	}()
 	tokenizer :=
-		NewTokenizer(str, p.number, p.identifier, p.operator).
+		NewTokenizer(str, p.number, p.identifier, p.operator, p.allowComments).
 			SetTextOperators(p.textOperators)
 
 	e := p.parseExpression(tokenizer)

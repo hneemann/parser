@@ -71,6 +71,7 @@ type Parser[V any] struct {
 	arrayHandler   ArrayHandler[V]
 	closureHandler ClosureHandler[V]
 	mapHandler     MapHandler[V]
+	boolHandler    BoolHandler[V]
 	textOperators  map[string]string
 	number         Matcher
 	identifier     Matcher
@@ -91,6 +92,18 @@ type VarMap[V any] map[string]V
 func (m VarMap[V]) Get(name string) (V, bool) {
 	v, ok := m[name]
 	return v, ok
+}
+
+// BoolHandler allows access to bool
+type BoolHandler[V any] interface {
+	// ToBool checks if value is a bool
+	ToBool(V) (v bool, isBool bool)
+}
+
+type BoolHandlerFunc[V any] func(v V) (val bool, isBool bool)
+
+func (bhf BoolHandlerFunc[V]) ToBool(v V) (val bool, isBool bool) {
+	return bhf(v)
 }
 
 // ArrayHandler allows creating and to access arrays
@@ -330,6 +343,12 @@ func (p *Parser[V]) ClosureHandler(h ClosureHandler[V]) *Parser[V] {
 // MapHandler is used to set a converter that creates values from a map of values
 func (p *Parser[V]) MapHandler(m MapHandler[V]) *Parser[V] {
 	p.mapHandler = m
+	return p
+}
+
+// BoolHandler is used to set a converter that creates bools from values
+func (p *Parser[V]) BoolHandler(b BoolHandler[V]) *Parser[V] {
+	p.boolHandler = b
 	return p
 }
 
@@ -641,7 +660,23 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 			} else {
 				// function
 				tokenizer.Next() // skip tOpen
-				if p.closureHandler != nil && name == "closure" {
+				if p.boolHandler != nil && name == "ite" {
+					args, _ := p.parseArgs(tokenizer, tClose)
+					if len(args) != 3 {
+						panic("ite requires three arguments ([condition],[true],[false])")
+					}
+					return ExpressionFunc[V](func(context Variables[V]) V {
+						if v, ok := p.boolHandler.ToBool(args[0].Eval(context)); ok {
+							if v {
+								return args[1].Eval(context)
+							} else {
+								return args[2].Eval(context)
+							}
+						} else {
+							panic("ite's first arguments needs to be a bool")
+						}
+					})
+				} else if p.closureHandler != nil && name == "closure" {
 					// multi arg closure definition: closure(a,b)->[exp]
 					names := p.parseIdentList(tokenizer)
 					t := tokenizer.Next()

@@ -55,7 +55,7 @@ func (s simpleOperator) Matches(r rune) bool {
 type function[V any] struct {
 	minArgs  int
 	maxArgs  int
-	function func(a ...V) V
+	function func(Variables[V], ...Expression[V]) V
 	isPure   bool
 }
 
@@ -71,7 +71,6 @@ type Parser[V any] struct {
 	arrayHandler   ArrayHandler[V]
 	closureHandler ClosureHandler[V]
 	mapHandler     MapHandler[V]
-	boolHandler    BoolHandler[V]
 	textOperators  map[string]string
 	number         Matcher
 	identifier     Matcher
@@ -92,18 +91,6 @@ type VarMap[V any] map[string]V
 func (m VarMap[V]) Get(name string) (V, bool) {
 	v, ok := m[name]
 	return v, ok
-}
-
-// BoolHandler allows access to bool
-type BoolHandler[V any] interface {
-	// ToBool checks if value is a bool
-	ToBool(V) (v bool, isBool bool)
-}
-
-type BoolHandlerFunc[V any] func(v V) (val bool, isBool bool)
-
-func (bhf BoolHandlerFunc[V]) ToBool(v V) (val bool, isBool bool) {
-	return bhf(v)
 }
 
 // ArrayHandler allows creating and to access arrays
@@ -230,15 +217,15 @@ func New[V any]() *Parser[V] {
 // The name gives the operation name e.g."+" and the function
 // needs to implement the operation.
 func (p *Parser[V]) Op(name string, operate func(a, b V) V) *Parser[V] {
-	return p.OpContext(name, func(a, b Expression[V], c Variables[V]) V {
+	return p.OpExpression(name, func(a, b Expression[V], c Variables[V]) V {
 		return operate(a.Eval(c), b.Eval(c))
 	}, true)
 }
 
-// OpContext adds an operation to the parser
+// OpExpression adds an operation to the parser
 // The name gives the operation name e.g."+" and the function
 // needs to implement the operation.
-func (p *Parser[V]) OpContext(name string, operate func(a, b Expression[V], context Variables[V]) V, isPure bool) *Parser[V] {
+func (p *Parser[V]) OpExpression(name string, operate func(a, b Expression[V], context Variables[V]) V, isPure bool) *Parser[V] {
 	p.operators = append(p.operators, operator[V]{
 		operator: name,
 		operate:  operate,
@@ -253,13 +240,13 @@ func (p *Parser[V]) Unary(name string, operate func(a V) V) *Parser[V] {
 	return p
 }
 
-//Func declares a function
+//FuncExpression declares a function
 //Here, functions are allowed whose result does not depend only on the arguments.
 //This function may return different results if it is called several times with
 //the same arguments. For performance reasons no pure function should be declared here.
 //The random function is an example of a non-pure function: The result is different
 //for each call, even if the arguments are always the same.
-func (p *Parser[V]) Func(name string, f func(a ...V) V, min, max int) *Parser[V] {
+func (p *Parser[V]) FuncExpression(name string, f func(variables Variables[V], a ...Expression[V]) V, min, max int) *Parser[V] {
 	p.functions[name] = function[V]{
 		minArgs:  min,
 		maxArgs:  max,
@@ -267,6 +254,26 @@ func (p *Parser[V]) Func(name string, f func(a ...V) V, min, max int) *Parser[V]
 		isPure:   false,
 	}
 	return p
+}
+
+//Func declares a function
+//Here, functions are allowed whose result does not depend only on the arguments.
+//This function may return different results if it is called several times with
+//the same arguments. For performance reasons no pure function should be declared here.
+//The random function is an example of a non-pure function: The result is different
+//for each call, even if the arguments are always the same.
+func (p *Parser[V]) Func(name string, f func(a ...V) V, min, max int) *Parser[V] {
+	return p.FuncExpression(name, valueFunc(f), min, max)
+}
+
+func valueFunc[V any](f func(a ...V) V) func(variables Variables[V], a ...Expression[V]) V {
+	return func(variables Variables[V], expressions ...Expression[V]) V {
+		val := make([]V, len(expressions))
+		for i, e := range expressions {
+			val[i] = e.Eval(variables)
+		}
+		return f(val...)
+	}
 }
 
 //PureFunc declares a pure function
@@ -279,7 +286,7 @@ func (p *Parser[V]) PureFunc(name string, f func(a ...V) V, min, max int) *Parse
 	p.functions[name] = function[V]{
 		minArgs:  min,
 		maxArgs:  max,
-		function: f,
+		function: valueFunc(f),
 		isPure:   true,
 	}
 	return p
@@ -343,12 +350,6 @@ func (p *Parser[V]) ClosureHandler(h ClosureHandler[V]) *Parser[V] {
 // MapHandler is used to set a converter that creates values from a map of values
 func (p *Parser[V]) MapHandler(m MapHandler[V]) *Parser[V] {
 	p.mapHandler = m
-	return p
-}
-
-// BoolHandler is used to set a converter that creates bools from values
-func (p *Parser[V]) BoolHandler(b BoolHandler[V]) *Parser[V] {
-	p.boolHandler = b
 	return p
 }
 
@@ -660,23 +661,7 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 			} else {
 				// function
 				tokenizer.Next() // skip tOpen
-				if p.boolHandler != nil && name == "ite" {
-					args, _ := p.parseArgs(tokenizer, tClose)
-					if len(args) != 3 {
-						panic("ite requires three arguments ([condition],[true],[false])")
-					}
-					return ExpressionFunc[V](func(context Variables[V]) V {
-						if v, ok := p.boolHandler.ToBool(args[0].Eval(context)); ok {
-							if v {
-								return args[1].Eval(context)
-							} else {
-								return args[2].Eval(context)
-							}
-						} else {
-							panic("ite's first arguments needs to be a bool")
-						}
-					})
-				} else if p.closureHandler != nil && name == "closure" {
+				if p.closureHandler != nil && name == "closure" {
 					// multi arg closure definition: closure(a,b)->[exp]
 					names := p.parseIdentList(tokenizer)
 					t := tokenizer.Next()
@@ -697,19 +682,11 @@ func (p *Parser[V]) parseLiteral(tokenizer *Tokenizer) Expression[V] {
 							panic("function '" + name + "' requires at most " + strconv.Itoa(f.maxArgs) + " arguments")
 						} else {
 							if f.isPure && allArgsConst {
-								a := make([]V, len(args))
-								for i, e := range args {
-									a[i] = e.Eval(nil)
-								}
-								r := f.function(a...)
+								r := f.function(nil, args...)
 								return ConstExpression[V]{r}
 							}
 							return ExpressionFunc[V](func(context Variables[V]) V {
-								a := make([]V, len(args))
-								for i, e := range args {
-									a[i] = e.Eval(context)
-								}
-								return f.function(a...)
+								return f.function(context, args...)
 							})
 						}
 					} else {

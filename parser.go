@@ -373,8 +373,7 @@ func (p *Parser[V]) Parse(str string) (f Function[V], isConst bool, err error) {
 		}
 	}()
 	tokenizer :=
-		NewTokenizer(str, p.number, p.identifier, p.operator, p.allowComments).
-			SetTextOperators(p.textOperators)
+		NewTokenizer(str, p.number, p.identifier, p.operator, p.textOperators, p.allowComments)
 
 	e := p.parseExpression(tokenizer)
 	t := tokenizer.Next()

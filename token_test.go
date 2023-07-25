@@ -106,7 +106,7 @@ func TestNewTokenizer(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			tok := NewTokenizer(test.exp, simpleNumber{}, simpleIdentifier{}, simpleOperator{}, true)
+			tok := NewTokenizer(test.exp, simpleNumber{}, simpleIdentifier{}, simpleOperator{}, map[string]string{}, true)
 			for _, to := range test.want {
 				assert.EqualValues(t, to, tok.Next())
 			}
@@ -167,7 +167,7 @@ func TestNewTokenizerNoComment(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			tok := NewTokenizer(test.exp, simpleNumber{}, simpleIdentifier{}, simpleOperator{}, false)
+			tok := NewTokenizer(test.exp, simpleNumber{}, simpleIdentifier{}, simpleOperator{}, map[string]string{}, false)
 			for _, to := range test.want {
 				assert.EqualValues(t, to, tok.Next())
 			}

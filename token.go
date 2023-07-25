@@ -61,11 +61,11 @@ type Matcher interface {
 	Matches(r rune) bool
 }
 
-func NewTokenizer(text string, number, identifier, operator Matcher, allowComments bool) *Tokenizer {
+func NewTokenizer(text string, number, identifier, operator Matcher, textOp map[string]string, allowComments bool) *Tokenizer {
 	t := make(chan Token)
 	tok := &Tokenizer{
 		str:           text,
-		textOperators: map[string]string{},
+		textOperators: textOp,
 		number:        number,
 		identifier:    identifier,
 		operator:      operator,
@@ -73,11 +73,6 @@ func NewTokenizer(text string, number, identifier, operator Matcher, allowCommen
 		tok:           t}
 	go tok.run(t)
 	return tok
-}
-
-func (t *Tokenizer) SetTextOperators(textOp map[string]string) *Tokenizer {
-	t.textOperators = textOp
-	return t
 }
 
 func (t *Tokenizer) Peek() Token {

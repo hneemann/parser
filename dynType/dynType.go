@@ -404,12 +404,12 @@ func (c arrayHandler) Create(v []Value) Value {
 }
 
 func (c arrayHandler) GetElement(i Value, list Value) (Value, error) {
-	if list, ok := list.(vList); ok {
+	if l, ok := list.(vList); ok {
 		i := int(math.Round(i.Float()))
-		if i < 0 || i >= len(list) {
-			return vBool(false), fmt.Errorf("%v index out of bounds %d", list, i)
+		if i < 0 || i >= len(l) {
+			return vBool(false), fmt.Errorf("%v index out of bounds %d", l, i)
 		}
-		return list[i], nil
+		return l[i], nil
 	} else {
 		return vBool(false), fmt.Errorf("%v is not a list", list)
 	}
